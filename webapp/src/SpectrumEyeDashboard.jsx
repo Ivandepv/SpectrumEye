@@ -4,23 +4,23 @@ const WS_URL = "ws://localhost:8765";
 
 // ─── DESIGN SYSTEM ───────────────────────────────────────────────
 const C = {
-  bg:          "#030912",
-  panel:       "#06101c",
-  surface:     "#0a1628",
-  border:      "#0d2035",
+  bg:          "#07111f",
+  panel:       "#0b1a2e",
+  surface:     "#0f2038",
+  border:      "#1e3a58",
   radarGreen:  "#00ff41",
-  radarDim:    "#003010",
+  radarDim:    "#003d14",
   red:         "#ff3355",
-  amber:       "#ffaa00",
-  purple:      "#a78bfa",
+  amber:       "#ffbb00",
+  purple:      "#b79dfc",
   cyan:        "#00d4ff",
-  text:        "#c8d8e8",
-  textDim:     "#4a6080",
-  textMuted:   "#2a4060",
-  clear:       "#22c55e",
+  text:        "#e0eeff",
+  textDim:     "#7aaacf",
+  textMuted:   "#4a7090",
+  clear:       "#2edb6e",
   critical:    "#ff3355",
   elevated:    "#f97316",
-  moderate:    "#ffaa00",
+  moderate:    "#ffbb00",
 };
 
 // ─── SIGNAL DEFINITIONS ──────────────────────────────────────────
@@ -121,7 +121,7 @@ function RadarCanvas({ signalsRef }) {
     const sw = sweepRef.current; // degrees, 0=right, CW
 
     // Background
-    ctx.fillStyle = "#010d05";
+    ctx.fillStyle = "#030f08";
     ctx.fillRect(0, 0, W, H);
 
     // Clip to circle
@@ -137,7 +137,7 @@ function RadarCanvas({ signalsRef }) {
       const angleDeg = sw - TRAIL_DEG + t * TRAIL_DEG;
       const a1 = ((angleDeg - 0.5) * Math.PI) / 180;
       const a2 = ((angleDeg + 0.5 + TRAIL_DEG / 48) * Math.PI) / 180;
-      const alpha = t * t * 0.12;
+      const alpha = t * t * 0.18;
       ctx.beginPath();
       ctx.moveTo(cx, cy);
       ctx.arc(cx, cy, R, a1, a2);
@@ -152,13 +152,13 @@ function RadarCanvas({ signalsRef }) {
       const r = (R * i) / 4;
       ctx.beginPath();
       ctx.arc(cx, cy, r, 0, Math.PI * 2);
-      ctx.strokeStyle = "rgba(0,255,65,0.18)";
-      ctx.lineWidth = 0.5;
+      ctx.strokeStyle = "rgba(0,255,65,0.30)";
+      ctx.lineWidth = 1;
       ctx.stroke();
       // Range label
-      ctx.fillStyle = "rgba(0,255,65,0.45)";
-      ctx.font = "9px 'JetBrains Mono', monospace";
-      ctx.fillText(RING_LABELS[i - 1], cx + 4, cy - r + 12);
+      ctx.fillStyle = "rgba(0,255,65,0.80)";
+      ctx.font = "bold 12px 'JetBrains Mono', monospace";
+      ctx.fillText(RING_LABELS[i - 1], cx + 6, cy - r + 14);
     }
 
     // Radial lines every 30°
@@ -167,8 +167,8 @@ function RadarCanvas({ signalsRef }) {
       ctx.beginPath();
       ctx.moveTo(cx, cy);
       ctx.lineTo(cx + Math.cos(rad) * R, cy + Math.sin(rad) * R);
-      ctx.strokeStyle = "rgba(0,255,65,0.12)";
-      ctx.lineWidth = 0.5;
+      ctx.strokeStyle = "rgba(0,255,65,0.22)";
+      ctx.lineWidth = 0.8;
       ctx.stroke();
     }
 
@@ -176,23 +176,23 @@ function RadarCanvas({ signalsRef }) {
     for (let deg = 0; deg < 360; deg += 10) {
       if (deg % 30 === 0) continue;
       const rad = (deg * Math.PI) / 180;
-      const len = 5;
+      const len = 6;
       ctx.beginPath();
       ctx.moveTo(cx + Math.cos(rad) * (R - len), cy + Math.sin(rad) * (R - len));
       ctx.lineTo(cx + Math.cos(rad) * R,         cy + Math.sin(rad) * R);
-      ctx.strokeStyle = "rgba(0,255,65,0.25)";
-      ctx.lineWidth = 0.5;
+      ctx.strokeStyle = "rgba(0,255,65,0.40)";
+      ctx.lineWidth = 1;
       ctx.stroke();
     }
 
     // Cardinal labels
     const cardinals = [["N", -90], ["E", 0], ["S", 90], ["W", 180]];
-    ctx.font = "bold 11px 'JetBrains Mono', monospace";
+    ctx.font = "bold 14px 'JetBrains Mono', monospace";
     for (const [label, deg] of cardinals) {
       const rad = (deg * Math.PI) / 180;
-      const lx = cx + Math.cos(rad) * (R - 14);
-      const ly = cy + Math.sin(rad) * (R - 14);
-      ctx.fillStyle = "rgba(0,255,65,0.7)";
+      const lx = cx + Math.cos(rad) * (R - 16);
+      const ly = cy + Math.sin(rad) * (R - 16);
+      ctx.fillStyle = "rgba(0,255,65,0.95)";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(label, lx, ly);
@@ -209,8 +209,8 @@ function RadarCanvas({ signalsRef }) {
     ctx.moveTo(cx, cy);
     ctx.lineTo(cx + Math.cos(swRad) * R, cy + Math.sin(swRad) * R);
     ctx.strokeStyle = grad;
-    ctx.lineWidth = 1.5;
-    ctx.shadowBlur = 6;
+    ctx.lineWidth = 2.5;
+    ctx.shadowBlur = 10;
     ctx.shadowColor = C.radarGreen;
     ctx.stroke();
     ctx.shadowBlur = 0;
@@ -238,9 +238,9 @@ function RadarCanvas({ signalsRef }) {
                         "0,255,65";
 
       // Glow
-      const glowSize = 18 + bright * 14;
+      const glowSize = 22 + bright * 18;
       const glowGrad = ctx.createRadialGradient(bx, by, 0, bx, by, glowSize);
-      glowGrad.addColorStop(0, `rgba(${baseColor},${0.5 * bright})`);
+      glowGrad.addColorStop(0, `rgba(${baseColor},${0.65 * bright})`);
       glowGrad.addColorStop(1, `rgba(${baseColor},0)`);
       ctx.beginPath();
       ctx.arc(bx, by, glowSize, 0, Math.PI * 2);
@@ -248,28 +248,31 @@ function RadarCanvas({ signalsRef }) {
       ctx.fill();
 
       // Core dot
-      const dotR = 3 + bright * 2;
+      const dotR = 4 + bright * 3;
       ctx.beginPath();
       ctx.arc(bx, by, dotR, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(${baseColor},${0.5 + bright * 0.5})`;
-      ctx.shadowBlur = bright > 0.5 ? 8 : 0;
+      ctx.fillStyle = `rgba(${baseColor},${0.6 + bright * 0.4})`;
+      ctx.shadowBlur = bright > 0.4 ? 14 : 4;
       ctx.shadowColor = `rgb(${baseColor})`;
       ctx.fill();
       ctx.shadowBlur = 0;
 
       // Label when bright
-      if (bright > 0.3) {
-        ctx.font = "9px 'JetBrains Mono', monospace";
-        ctx.fillStyle = `rgba(${baseColor},${0.4 + bright * 0.6})`;
-        ctx.fillText(`${def.shortLabel || sig.cls}  ${sig.rssi}dBm`, bx + 8, by - 5);
+      if (bright > 0.2) {
+        ctx.font = "bold 12px 'JetBrains Mono', monospace";
+        ctx.fillStyle = `rgba(${baseColor},${0.5 + bright * 0.5})`;
+        ctx.fillText(`${def.shortLabel || sig.cls}  ${sig.rssi}dBm`, bx + 10, by - 7);
       }
     }
 
     // Center dot
     ctx.beginPath();
-    ctx.arc(cx, cy, 3, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(0,255,65,0.8)";
+    ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(0,255,65,1.0)";
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = "#00ff41";
     ctx.fill();
+    ctx.shadowBlur = 0;
 
     ctx.restore();
 
@@ -288,7 +291,7 @@ function RadarCanvas({ signalsRef }) {
       height={RADAR_SIZE}
       style={{
         borderRadius: "50%",
-        boxShadow: `0 0 32px rgba(0,255,65,0.18), 0 0 60px rgba(0,255,65,0.06)`,
+        boxShadow: `0 0 40px rgba(0,255,65,0.30), 0 0 80px rgba(0,255,65,0.10), inset 0 0 30px rgba(0,0,0,0.4)`,
         display: "block",
       }}
     />
@@ -300,7 +303,7 @@ function StrengthBar({ rssi }) {
   // -30 dBm = full (10 bars), -100 dBm = 0 bars
   const bars = Math.max(0, Math.min(10, Math.round(((rssi + 100) / 70) * 10)));
   return (
-    <span style={{ fontFamily: "monospace", letterSpacing: 1 }}>
+    <span style={{ fontFamily: "monospace", letterSpacing: 2, fontSize: 14 }}>
       <span style={{ color: C.radarGreen }}>{"█".repeat(bars)}</span>
       <span style={{ color: C.textMuted }}>{"░".repeat(10 - bars)}</span>
     </span>
@@ -330,35 +333,38 @@ function SignalCard({ signal }) {
   return (
     <div style={{
       background: C.surface,
-      border: `1px solid ${borderColor}40`,
-      borderLeft: `3px solid ${borderColor}`,
+      border: `1px solid ${borderColor}55`,
+      borderLeft: `4px solid ${borderColor}`,
       borderRadius: 8,
-      padding: "12px 14px",
-      marginBottom: 8,
+      padding: "14px 16px",
+      marginBottom: 10,
       fontFamily: "'JetBrains Mono', monospace",
-      fontSize: 12,
+      fontSize: 13,
     }}>
       {/* Header */}
-      <div style={{ color: headerColor, fontWeight: 700, fontSize: 13, marginBottom: 4 }}>
+      <div style={{ color: headerColor, fontWeight: 700, fontSize: 15, marginBottom: 6 }}>
         {isAlert ? "🔴 ALERT" : "🔵 COMMS"} — {def.label}
       </div>
 
       {/* Sentence */}
       <div style={{
-        color: C.textDim, fontSize: 11, fontStyle: "italic",
-        marginBottom: 8, lineHeight: 1.4,
-        borderBottom: `1px solid ${C.border}`, paddingBottom: 8,
+        color: C.textDim, fontSize: 12, fontStyle: "italic",
+        marginBottom: 10, lineHeight: 1.5,
+        borderBottom: `1px solid ${C.border}`, paddingBottom: 10,
       }}>
         "{sentence}"
       </div>
 
       {/* Details grid */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 3, color: C.text, fontSize: 11 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 5, color: C.text, fontSize: 13 }}>
         <Row label="Type"      value={def.shortLabel || signal.cls} />
         <Row label="Frequency" value={def.freq || "—"} />
-        <div style={{ display: "flex", gap: 0 }}>
-          <span style={{ color: C.textDim, width: 80, flexShrink: 0 }}>Strength</span>
-          <span><StrengthBar rssi={signal.rssi} />{"  "}{signal.rssi} dBm</span>
+        <div style={{ display: "flex", gap: 0, alignItems: "center" }}>
+          <span style={{ color: C.textDim, width: 90, flexShrink: 0 }}>Strength</span>
+          <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <StrengthBar rssi={signal.rssi} />
+            <span style={{ color: C.text }}>{signal.rssi} dBm</span>
+          </span>
         </div>
         <Row label="Trend"     value={trendStr} color={signal.trend >= 0 ? C.red : C.clear} />
         <Row label="Active for" value={fmtTime(signal.activeFor || 0)} />
@@ -366,19 +372,19 @@ function SignalCard({ signal }) {
 
       {/* Footer badges */}
       <div style={{
-        display: "flex", gap: 10, marginTop: 8,
-        fontSize: 10, color: C.textDim,
+        display: "flex", gap: 10, marginTop: 10,
+        fontSize: 11, color: C.textDim,
       }}>
         <span style={{
-          background: `${borderColor}18`, border: `1px solid ${borderColor}30`,
-          padding: "2px 7px", borderRadius: 3,
+          background: `${borderColor}22`, border: `1px solid ${borderColor}50`,
+          padding: "3px 9px", borderRadius: 4,
         }}>
           CNN: {((signal.conf || 0.9) * 100).toFixed(0)}% confidence
         </span>
         {signal.bearing != null && (
           <span style={{
-            background: `${C.cyan}10`, border: `1px solid ${C.cyan}25`,
-            padding: "2px 7px", borderRadius: 3, color: C.cyan,
+            background: `${C.cyan}15`, border: `1px solid ${C.cyan}40`,
+            padding: "3px 9px", borderRadius: 4, color: C.cyan,
           }}>
             Bearing: {signal.bearing}°
           </span>
@@ -391,7 +397,7 @@ function SignalCard({ signal }) {
 function Row({ label, value, color }) {
   return (
     <div style={{ display: "flex" }}>
-      <span style={{ color: C.textDim, width: 80, flexShrink: 0 }}>{label}</span>
+      <span style={{ color: C.textDim, width: 90, flexShrink: 0 }}>{label}</span>
       <span style={{ color: color || C.text }}>{value}</span>
     </div>
   );
@@ -403,31 +409,31 @@ function AlertLog({ alerts }) {
   return (
     <div style={{
       background: C.surface, border: `1px solid ${C.border}`,
-      borderRadius: 8, padding: "12px 14px",
-      maxHeight: 200, overflowY: "auto",
+      borderRadius: 8, padding: "14px 16px",
+      maxHeight: 220, overflowY: "auto",
     }}>
       <div style={{
-        fontSize: 11, fontWeight: 700, color: C.radarGreen,
-        letterSpacing: 2, marginBottom: 8,
+        fontSize: 13, fontWeight: 700, color: C.radarGreen,
+        letterSpacing: 2, marginBottom: 10,
         fontFamily: "'JetBrains Mono', monospace",
       }}>
         ━━━ ALERT LOG ━━━
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
         {alerts.map((a, i) => (
           <div key={i} style={{
-            display: "flex", gap: 8, alignItems: "flex-start",
-            opacity: Math.max(0.3, 1 - i * 0.1),
-            fontSize: 11,
+            display: "flex", gap: 10, alignItems: "flex-start",
+            opacity: Math.max(0.35, 1 - i * 0.09),
+            fontSize: 12,
             fontFamily: "'JetBrains Mono', monospace",
           }}>
             <span style={{ color: C.textDim, flexShrink: 0 }}>{a.time}</span>
             <span style={{
-              width: 7, height: 7, borderRadius: "50%", flexShrink: 0,
+              width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
               background: levelColors[a.level] || C.textDim,
-              marginTop: 2,
+              marginTop: 3, boxShadow: i === 0 ? `0 0 6px ${levelColors[a.level]}` : "none",
             }} />
-            <span style={{ color: C.text, fontSize: 11 }}>{a.message}</span>
+            <span style={{ color: C.text, fontSize: 12 }}>{a.message}</span>
           </div>
         ))}
       </div>
@@ -445,7 +451,7 @@ function LiveClock() {
   return (
     <span style={{
       fontFamily: "'JetBrains Mono', monospace",
-      fontSize: 12, color: C.radarGreen, letterSpacing: 1,
+      fontSize: 14, color: C.radarGreen, letterSpacing: 1,
     }}>
       {t.toLocaleTimeString("en-GB")} UTC+8
     </span>
@@ -761,13 +767,13 @@ export default function SpectrumEyeDashboard() {
           </div>
           <div>
             <div style={{
-              fontSize: 15, fontWeight: 800, letterSpacing: 3,
+              fontSize: 19, fontWeight: 800, letterSpacing: 3,
               fontFamily: "'JetBrains Mono', monospace",
               color: C.radarGreen,
             }}>
               SPECTRUM<span style={{ color: C.cyan }}>EYE</span>
             </div>
-            <div style={{ fontSize: 9, color: C.textDim, letterSpacing: 2 }}>
+            <div style={{ fontSize: 12, color: C.textDim, letterSpacing: 2 }}>
               RF SITUATIONAL AWARENESS · TAINAN, TW
             </div>
           </div>
@@ -775,20 +781,20 @@ export default function SpectrumEyeDashboard() {
 
         {/* Center — threat status */}
         <div style={{
-          display: "flex", alignItems: "center", gap: 8,
-          padding: "6px 16px", borderRadius: 4,
-          border: `1px solid ${threatColor}50`,
-          background: `${threatColor}10`,
+          display: "flex", alignItems: "center", gap: 10,
+          padding: "8px 20px", borderRadius: 6,
+          border: `1px solid ${threatColor}60`,
+          background: `${threatColor}15`,
           animation: threatLevel === "CRITICAL" ? "pulseBorder 1.5s ease-in-out infinite" : "none",
         }}>
           <div style={{
-            width: 8, height: 8, borderRadius: "50%",
+            width: 10, height: 10, borderRadius: "50%",
             background: threatColor,
-            boxShadow: `0 0 6px ${threatColor}`,
+            boxShadow: `0 0 8px ${threatColor}`,
             animation: threatLevel !== "CLEAR" ? "blink 1.2s step-end infinite" : "none",
           }} />
           <span style={{
-            fontSize: 11, fontWeight: 700, letterSpacing: 2,
+            fontSize: 14, fontWeight: 700, letterSpacing: 2,
             color: threatColor, fontFamily: "'JetBrains Mono', monospace",
           }}>
             THREAT: {threatLevel}
@@ -799,12 +805,12 @@ export default function SpectrumEyeDashboard() {
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
           <LiveClock />
           <div style={{
-            fontSize: 10, fontWeight: 700,
+            fontSize: 12, fontWeight: 700,
             fontFamily: "'JetBrains Mono', monospace", letterSpacing: 1,
             color:   wsLive ? C.clear   : C.amber,
-            padding: "3px 8px", borderRadius: 4,
-            background: wsLive ? `${C.clear}12` : `${C.amber}12`,
-            border: `1px solid ${wsLive ? C.clear : C.amber}30`,
+            padding: "5px 12px", borderRadius: 4,
+            background: wsLive ? `${C.clear}18` : `${C.amber}18`,
+            border: `1px solid ${wsLive ? C.clear : C.amber}50`,
           }}>
             {wsLive ? "● LIVE · CNN" : "◌ SIMULATION"}
           </div>
@@ -846,10 +852,10 @@ export default function SpectrumEyeDashboard() {
                 background: C.surface,
                 borderRight: i < 3 ? `1px solid ${C.border}` : "none",
               }}>
-                <div style={{ fontSize: 18, fontWeight: 800, color: stat.color }}>
+                <div style={{ fontSize: 22, fontWeight: 800, color: stat.color }}>
                   {stat.value}
                 </div>
-                <div style={{ fontSize: 8, color: C.textDim, letterSpacing: 2, marginTop: 2 }}>
+                <div style={{ fontSize: 10, color: C.textDim, letterSpacing: 2, marginTop: 3 }}>
                   {stat.label}
                 </div>
               </div>
@@ -867,10 +873,10 @@ export default function SpectrumEyeDashboard() {
 
           {/* Section header */}
           <div style={{
-            fontSize: 11, fontWeight: 700, color: C.radarGreen,
+            fontSize: 13, fontWeight: 700, color: C.radarGreen,
             letterSpacing: 3, fontFamily: "'JetBrains Mono', monospace",
-            textAlign: "center", padding: "6px 0",
-            borderBottom: `1px solid ${C.radarGreen}30`,
+            textAlign: "center", padding: "8px 0",
+            borderBottom: `1px solid ${C.radarGreen}40`,
           }}>
             ━━━ SIGNAL INTELLIGENCE ━━━
           </div>
@@ -893,16 +899,16 @@ export default function SpectrumEyeDashboard() {
           {/* System panel */}
           <div style={{
             background: C.surface, border: `1px solid ${C.border}`,
-            borderRadius: 8, padding: "12px 14px",
-            fontFamily: "'JetBrains Mono', monospace", fontSize: 10,
+            borderRadius: 8, padding: "14px 16px",
+            fontFamily: "'JetBrains Mono', monospace", fontSize: 12,
           }}>
             <div style={{
               color: C.radarGreen, fontWeight: 700, letterSpacing: 2,
-              marginBottom: 8, fontSize: 11,
+              marginBottom: 10, fontSize: 13,
             }}>
               ━━━ SYSTEM ━━━
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {[
                 ["Edge AI",  "Pi 5 · MobileNetV2",   "SIM"],
                 ["SDR",      "RTL-SDR Blog V4",       "SIM"],
@@ -918,7 +924,9 @@ export default function SpectrumEyeDashboard() {
                   <span style={{ color: C.text }}>{val}</span>
                   <span style={{
                     color: st === "OK" || st === "LOADED" ? C.clear : C.amber,
-                    fontSize: 9, letterSpacing: 1,
+                    fontSize: 11, letterSpacing: 1,
+                    background: st === "OK" || st === "LOADED" ? `${C.clear}15` : `${C.amber}15`,
+                    padding: "1px 6px", borderRadius: 3,
                   }}>
                     {st}
                   </span>
