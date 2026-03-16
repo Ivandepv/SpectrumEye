@@ -1,7 +1,10 @@
 # SpectrumEye — Edge + Simulation requirements
 # Used by: edge/main.py, simulation/simulation_final.py
 #
-# Create venv:  python3 -m venv .venv
+# Python 3.12 required — TensorFlow does not support 3.13+
+# Install Python 3.12 on Arch: sudo pacman -S python312
+#
+# Create venv:  python3.12 -m venv .venv
 # Activate:     source .venv/bin/activate
 # Install:      pip install -r requirements.txt
 
