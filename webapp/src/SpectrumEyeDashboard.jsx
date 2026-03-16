@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
+const WS_URL = "ws://localhost:8765";
+
 // ─── DESIGN SYSTEM ───────────────────────────────────────────────
 const C = {
   bg:          "#030912",
@@ -466,6 +468,10 @@ export default function SpectrumEyeDashboard() {
     },
   ]);
 
+  // WebSocket live mode
+  const [wsLive, setWsLive] = useState(false);
+  const wsLiveRef = useRef(false);
+
   // Signals passed to radar (via ref — no re-render needed)
   const signalsRef = useRef([]);
 
@@ -494,9 +500,83 @@ export default function SpectrumEyeDashboard() {
     setAlerts(prev => [{ time, level, message }, ...prev.slice(0, 14)]);
   }
 
+  // ── WebSocket client — connects to edge/main.py --display ws ────
+  useEffect(() => {
+    let ws = null;
+    let retryTimer = null;
+
+    function connect() {
+      ws = new WebSocket(WS_URL);
+
+      ws.onopen = () => {
+        wsLiveRef.current = true;
+        setWsLive(true);
+        const time = new Date().toLocaleTimeString("en-GB");
+        setAlerts(prev => [
+          { time, level: "CLEAR", message: "● Pipeline connected — receiving live CNN data" },
+          ...prev.slice(0, 14),
+        ]);
+      };
+
+      ws.onmessage = (evt) => {
+        let data;
+        try { data = JSON.parse(evt.data); } catch { return; }
+
+        // Map ws payload → radar signal objects
+        const mapped = (data.signals || []).map(s => ({
+          id:        s.id,
+          cls:       s.cls,
+          state:     s.state,
+          rssi:      s.rssi,
+          conf:      s.conf,
+          bearing:   s.bearing,
+          trend:     s.trend,
+          activeFor: s.activeFor,
+        }));
+
+        signalsRef.current = mapped;
+        setCardSignals(mapped);
+
+        // Incoming alert from pipeline
+        if (data.alert) {
+          const time = new Date().toLocaleTimeString("en-GB");
+          setAlerts(prev => [
+            { time, level: data.alert.level, message: data.alert.message },
+            ...prev.slice(0, 14),
+          ]);
+        }
+      };
+
+      ws.onerror = () => {};
+
+      ws.onclose = () => {
+        if (wsLiveRef.current) {
+          const time = new Date().toLocaleTimeString("en-GB");
+          setAlerts(prev => [
+            { time, level: "MODERATE", message: "Pipeline disconnected — reverting to simulation" },
+            ...prev.slice(0, 14),
+          ]);
+        }
+        wsLiveRef.current = false;
+        setWsLive(false);
+        // Auto-reconnect after 3s
+        retryTimer = setTimeout(connect, 3000);
+      };
+    }
+
+    connect();
+    return () => {
+      clearTimeout(retryTimer);
+      if (ws) ws.close();
+    };
+  }, []);
+
   // Master 400ms tick
   useEffect(() => {
     const id = setInterval(() => {
+      // Pause JS simulation when real pipeline is connected
+      if (wsLiveRef.current) return;
+
       const s = simRef.current;
       s.tick++;
       s.lteActiveFor++;
@@ -715,14 +795,18 @@ export default function SpectrumEyeDashboard() {
           </span>
         </div>
 
-        {/* Right — clock + status */}
+        {/* Right — clock + source indicator */}
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
           <LiveClock />
           <div style={{
-            fontSize: 10, color: C.clear, fontWeight: 600,
+            fontSize: 10, fontWeight: 700,
             fontFamily: "'JetBrains Mono', monospace", letterSpacing: 1,
+            color:   wsLive ? C.clear   : C.amber,
+            padding: "3px 8px", borderRadius: 4,
+            background: wsLive ? `${C.clear}12` : `${C.amber}12`,
+            border: `1px solid ${wsLive ? C.clear : C.amber}30`,
           }}>
-            ● LIVE
+            {wsLive ? "● LIVE · CNN" : "◌ SIMULATION"}
           </div>
         </div>
       </div>

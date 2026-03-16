@@ -20,7 +20,9 @@ Modes:
             /tmp/spectromeye_frames.sock
 
   --display flask  Use Flask HTTP display instead of terminal.
+  --display ws     Push BIE output to the React dashboard via WebSocket.
   --port    5000   Flask port (default 5000).
+  --ws-port 8765   WebSocket port (default 8765, only used with --display ws).
 
 Data flow per frame:
   1. Receive sweep_frame dict (Interface A + A+)
@@ -60,6 +62,7 @@ from edge.sensor_fusion    import SensorFusion
 from edge.aws_publisher    import AWSPublisher
 from edge.alert_controller import AlertController
 from edge.local_display    import LocalDisplay
+from edge.ws_server        import WsBroadcastServer
 
 # ─── LOGGING ──────────────────────────────────────────────────────
 
@@ -346,10 +349,11 @@ class EdgePipeline:
     def __init__(
         self,
         frame_source,
-        model_path:     Optional[Path] = None,
+        model_path:      Optional[Path] = None,
         display_backend: str = "terminal",
         flask_port:      int = 5000,
         enable_aws:      bool = False,
+        ws_port:         int = 8765,
     ) -> None:
         self._source = frame_source
 
@@ -357,9 +361,16 @@ class EdgePipeline:
         self._clf     = SpectrumClassifier(model_path=model_path) if model_path else SpectrumClassifier()
         self._bie     = BIE(sensor_id=SENSOR_ID)
         self._sensors = SensorFusion()
-        self._display = LocalDisplay(backend=display_backend, flask_port=flask_port)
         self._alerts  = AlertController(sensor_id=SENSOR_ID)
         self._aws     = AWSPublisher(sensor_id=SENSOR_ID)
+
+        # WebSocket broadcast server (started only with --display ws)
+        self._ws: Optional[WsBroadcastServer] = None
+        if display_backend == "ws":
+            self._ws = WsBroadcastServer(host="localhost", port=ws_port)
+            self._display = LocalDisplay(backend="terminal")  # keep terminal log too
+        else:
+            self._display = LocalDisplay(backend=display_backend, flask_port=flask_port)
 
         self._running      = False
         self._frame_count  = 0
@@ -375,6 +386,8 @@ class EdgePipeline:
         signal.signal(signal.SIGTERM, self._handle_shutdown)
 
         self._display.start()
+        if self._ws:
+            self._ws.start()
         log.info("EdgePipeline: running — Ctrl+C to stop")
 
         try:
@@ -442,6 +455,8 @@ class EdgePipeline:
         self._display.update(bie_output)
         self._alerts.evaluate(bie_output)
         self._aws.publish_detection(bie_output)
+        if self._ws:
+            self._ws.send(bie_output)
 
         # RSSI time-series data point
         self._aws.publish_rssi(
@@ -486,6 +501,8 @@ class EdgePipeline:
     def _shutdown(self) -> None:
         log.info("EdgePipeline: shutting down...")
         self._display.stop()
+        if self._ws:
+            self._ws.stop()
         self._sensors.close()
         self._alerts.close()
         self._aws.close()
@@ -531,15 +548,21 @@ def main() -> None:
     )
     parser.add_argument(
         "--display",
-        choices=["terminal", "flask"],
+        choices=["terminal", "flask", "ws"],
         default="terminal",
-        help="Display backend: terminal (default) or flask (http://localhost:PORT)",
+        help="Display backend: terminal (default) | flask | ws (React dashboard)",
     )
     parser.add_argument(
         "--port",
         type=int,
         default=5000,
         help="Flask display port (default: 5000, only used with --display flask)",
+    )
+    parser.add_argument(
+        "--ws-port",
+        type=int,
+        default=8765,
+        help="WebSocket port for the React dashboard (default: 8765)",
     )
     parser.add_argument(
         "--interval",
@@ -579,6 +602,7 @@ def main() -> None:
         model_path=model_path,
         display_backend=args.display,
         flask_port=args.port,
+        ws_port=args.ws_port,
     )
     pipeline.run()
 
