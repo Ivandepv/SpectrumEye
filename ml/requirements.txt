@@ -1,0 +1,29 @@
+# SpectrumEye ML Requirements
+# Python 3.12 required (TensorFlow does not support 3.13+)
+
+# Core ML
+tensorflow==2.18.0
+numpy==1.26.4
+
+# Signal processing
+scipy==1.13.1
+
+# Image handling
+Pillow==10.4.0
+
+# Visualization
+matplotlib==3.9.2
+seaborn==0.13.2
+
+# ML utilities
+scikit-learn==1.5.2
+
+# AWS (for upload_s3.py, used in Phase 6)
+boto3==1.35.0
+
+# Notebook
+jupyter==1.1.1
+ipykernel==6.29.5
+
+# TFLite runtime (Pi 5 inference — install separately on ARM)
+# tflite-runtime  # uncomment when deploying to Pi 5

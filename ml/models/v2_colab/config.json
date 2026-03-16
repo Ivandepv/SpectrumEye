@@ -1,0 +1,24 @@
+{
+  "version": "v2_colab",
+  "classes": [
+    "Key_Signal",
+    "Walkie_Talkie",
+    "LTE"
+  ],
+  "n_classes": 3,
+  "img_size": [
+    224,
+    224
+  ],
+  "epochs_run": 50,
+  "epochs_max": 50,
+  "batch_size": 32,
+  "learning_rate": 0.0001,
+  "base_model": "MobileNetV2",
+  "alpha": 0.75,
+  "freeze_until": 100,
+  "trainable_params": 1497587,
+  "total_params": 1743283,
+  "test_accuracy": 1.0,
+  "n_samples": 1575
+}

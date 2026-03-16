@@ -1,0 +1,47 @@
+# ── Python ───────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+**/.venv/
+.env
+.env.*
+.claude
+
+# ── ML — Generated datasets (recreate with pipeline scripts) ─────
+simulation/dataset_rf/
+ml/dataset/
+test_batch/
+my_test/
+
+# ── ML — Training archives ────────────────────────────────────────
+ml_training*.zip
+
+# ── ML — Model binaries (large; use scripts to retrain) ──────────
+# Config files (*.json) ARE committed — only binaries are excluded.
+*.keras
+*.tflite
+*.h5
+*.pb
+
+# ── Node / Frontend ──────────────────────────────────────────────
+node_modules/
+webapp/node_modules/
+webapp/dist/
+webapp/.vite/
+*.tsbuildinfo
+
+# ── OS ───────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── IDE ──────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+
+# ── Design / Reference documents (not for public repo) ──────────
+docs/
+
+# ── Misc root artefacts ───────────────────────────────────────────
+image.png
