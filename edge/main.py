@@ -149,52 +149,62 @@ class SimulationFrameSource:
 
     def _demo_sequence(self) -> Iterator[dict]:
         """
-        Scripted 3-phase demo:
+        Scripted 4-phase demo — loops indefinitely until Ctrl+C:
           Phase 1 (15 frames): LTE background only
           Phase 2 (20 frames): Walkie_Talkie appears and approaches fast
           Phase 3 (10 frames): Walkie_Talkie stabilises then Key_Signal appears
           Phase 4 (10 frames): Key_Signal departs, Walkie_Talkie holds
+          Pause  (10 frames):  LTE only — cool-down before next loop
         """
-        log.info("Demo: Phase 1 — LTE background only")
-        for i in range(15):
-            yield self._make_frame(
-                freq=1_800_000_000, rssi_dbfs=-75.0, band_id="lte_band3",
-                force_class="LTE", force_conf=0.99,
-            )
-            time.sleep(self._interval)
+        cycle = 0
+        while True:
+            cycle += 1
+            log.info("Demo cycle %d — Phase 1: LTE background only", cycle)
+            for i in range(15):
+                yield self._make_frame(
+                    freq=1_800_000_000, rssi_dbfs=-75.0, band_id="lte_band3",
+                    force_class="LTE", force_conf=0.99,
+                )
+                time.sleep(self._interval)
 
-        log.info("Demo: Phase 2 — Walkie-talkie approaching fast")
-        for i in range(20):
-            rssi = -85.0 + i * 2.0   # +4 dBFS/s at 0.5s intervals → slope ≈ +4
-            yield self._make_frame(
-                freq=462_000_000, rssi_dbfs=rssi, band_id="wifi_24",
-                force_class="Walkie_Talkie", force_conf=0.93,
-            )
-            time.sleep(self._interval)
+            log.info("Demo cycle %d — Phase 2: Walkie-talkie approaching fast", cycle)
+            for i in range(20):
+                rssi = -85.0 + i * 2.0
+                yield self._make_frame(
+                    freq=462_000_000, rssi_dbfs=rssi, band_id="wifi_24",
+                    force_class="Walkie_Talkie", force_conf=0.93,
+                )
+                time.sleep(self._interval)
 
-        log.info("Demo: Phase 3 — Key_Signal appears, Walkie_Talkie stationary")
-        for i in range(10):
-            yield self._make_frame(
-                freq=462_000_000, rssi_dbfs=-45.0, band_id="wifi_24",
-                force_class="Walkie_Talkie", force_conf=0.91,
-            )
-            time.sleep(self._interval / 2)
-            yield self._make_frame(
-                freq=433_000_000, rssi_dbfs=-65.0 + i * 0.5, band_id="iot_433",
-                force_class="Key_Signal", force_conf=0.88,
-            )
-            time.sleep(self._interval / 2)
+            log.info("Demo cycle %d — Phase 3: Key_Signal appears, Walkie_Talkie stationary", cycle)
+            for i in range(10):
+                yield self._make_frame(
+                    freq=462_000_000, rssi_dbfs=-45.0, band_id="wifi_24",
+                    force_class="Walkie_Talkie", force_conf=0.91,
+                )
+                time.sleep(self._interval / 2)
+                yield self._make_frame(
+                    freq=433_000_000, rssi_dbfs=-65.0 + i * 0.5, band_id="iot_433",
+                    force_class="Key_Signal", force_conf=0.88,
+                )
+                time.sleep(self._interval / 2)
 
-        log.info("Demo: Phase 4 — Key_Signal departing")
-        for i in range(10):
-            rssi = -65.0 - i * 1.5
-            yield self._make_frame(
-                freq=433_000_000, rssi_dbfs=rssi, band_id="iot_433",
-                force_class="Key_Signal", force_conf=0.87,
-            )
-            time.sleep(self._interval)
+            log.info("Demo cycle %d — Phase 4: Key_Signal departing", cycle)
+            for i in range(10):
+                rssi = -65.0 - i * 1.5
+                yield self._make_frame(
+                    freq=433_000_000, rssi_dbfs=rssi, band_id="iot_433",
+                    force_class="Key_Signal", force_conf=0.87,
+                )
+                time.sleep(self._interval)
 
-        log.info("Demo scenario complete.")
+            log.info("Demo cycle %d complete — pausing before next cycle", cycle)
+            for _ in range(10):
+                yield self._make_frame(
+                    freq=1_800_000_000, rssi_dbfs=-75.0, band_id="lte_band3",
+                    force_class="LTE", force_conf=0.99,
+                )
+                time.sleep(self._interval)
 
     # ── Synthetic spectrogram builder ─────────────────────────────
 
