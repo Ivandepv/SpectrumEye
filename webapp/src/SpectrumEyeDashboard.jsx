@@ -259,9 +259,9 @@ function RadarCanvas({ signalsRef }) {
 
       // Label when bright
       if (bright > 0.2) {
-        ctx.font = "bold 12px 'JetBrains Mono', monospace";
+        ctx.font = "bold 14px 'JetBrains Mono', monospace";
         ctx.fillStyle = `rgba(${baseColor},${0.5 + bright * 0.5})`;
-        ctx.fillText(`${def.shortLabel || sig.cls}  ${sig.rssi}dBm`, bx + 10, by - 7);
+        ctx.fillText(`${def.shortLabel || sig.cls}  ${sig.rssi}dBm`, bx + 12, by - 8);
       }
     }
 
