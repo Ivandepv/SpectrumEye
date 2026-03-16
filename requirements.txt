@@ -1,0 +1,31 @@
+# SpectrumEye — Edge + Simulation requirements
+# Used by: edge/main.py, simulation/simulation_final.py
+#
+# Create venv:  python3 -m venv .venv
+# Activate:     source .venv/bin/activate
+# Install:      pip install -r requirements.txt
+
+# Core numerics
+numpy==1.26.4
+
+# Signal processing (simulation_final.py)
+scipy==1.13.1
+
+# Image handling
+Pillow==10.4.0
+
+# CNN inference (classifier.py loads the .keras model)
+# On Pi 5, replace with tflite-runtime once INT8 conversion is done
+tensorflow==2.18.0
+
+# WebSocket server (ws_server.py → React dashboard)
+websockets==15.0.1
+
+# Optional — Flask display backend (--display flask)
+flask==3.1.0
+
+# Optional — CPU/RAM stats in status heartbeat (main.py)
+psutil==6.1.1
+
+# Optional — AWS cloud pipeline (aws_publisher.py)
+# boto3==1.35.0
