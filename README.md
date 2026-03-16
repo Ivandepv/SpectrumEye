@@ -2,13 +2,13 @@
 
 **RF Situational Awareness System** — real-time detection and classification of radio frequency signals using a physics-based IQ simulation pipeline, a CNN trained on spectrograms, and a Behavioral Inference Engine that translates signal patterns into human-readable threat assessments.
 
-Built as a defense-oriented project in Tainan, Taiwan. Current state: **fully working simulation/demo** with a trained CNN (100% test accuracy on 3 signal classes).
+Built as a defense-oriented project in Tainan, Taiwan. Current state: **fully working end-to-end simulation** — edge pipeline, CNN classifier, WebSocket bridge, and military radar dashboard all connected.
 
 ---
 
 ## What It Does
 
-SpectrumEye listens to the RF spectrum, converts IQ samples into spectrograms, and classifies them with a convolutional neural network. A Behavioral Inference Engine (BIE) then tracks signal movement over time — is the source approaching? stationary? departing? — and generates an assessment sentence in plain language. Results appear on a real-time React dashboard.
+SpectrumEye listens to the RF spectrum, converts IQ samples into spectrograms, and classifies them with a convolutional neural network. A Behavioral Inference Engine (BIE) tracks signal movement over time — is the source approaching? stationary? departing? — and generates a plain-language assessment. Results stream in real time to a phosphor radar dashboard via WebSocket.
 
 ```
 IQ Samples → STFT → 224×224 Spectrogram → CNN → Signal Class + Confidence
@@ -19,14 +19,12 @@ IQ Samples → STFT → 224×224 Spectrogram → CNN → Signal Class + Confiden
                                           "Key fob signal approaching rapidly —
                                            possible remote device in perimeter"
                                                          ↓
-                                               React Dashboard / AWS IoT
+                                          WebSocket → React Radar Dashboard
 ```
 
 ---
 
-## Current State — Demo / Simulation Mode
-
-Everything below is **fully implemented and working**:
+## Current State
 
 | Component | Status | Notes |
 |-----------|--------|-------|
@@ -35,9 +33,10 @@ Everything below is **fully implemented and working**:
 | CNN training (Google Colab) | ✅ Done | MobileNetV2, 50 epochs, T4 GPU |
 | CNN accuracy | ✅ 100% | Level 1 (seed=999) and Level 2 (300 unseen images) |
 | Behavioral Inference Engine | ✅ Done | `edge/bie.py` — 8 behavioral states |
-| Edge pipeline (Pi 5 ready) | ✅ Done | `edge/main.py` — sim / demo / socket modes |
-| React dashboard | ✅ Done | Simulation mode with scripted key-fob scenario |
-| Cloud pipeline (AWS) | 🔲 Stub | `edge/aws_publisher.py` — interface ready, not connected |
+| Edge pipeline | ✅ Done | `edge/main.py` — sim / demo / socket modes |
+| WebSocket bridge | ✅ Done | `edge/ws_server.py` — BIE output → React dashboard |
+| Radar dashboard | ✅ Done | Phosphor radar, live CNN data, JS fallback sim |
+| Cloud pipeline (AWS) | 🔲 Stub | `edge/aws_publisher.py` — interface ready |
 | Real RTL-SDR hardware | 🔲 Next | Edge code ready, hardware not yet connected |
 | TFLite INT8 conversion | 🔲 Next | Needed for <50ms on Pi 5 |
 
@@ -45,7 +44,7 @@ Everything below is **fully implemented and working**:
 
 ## Signal Classes
 
-The CNN currently classifies **3 signal types**. The architecture is designed to expand to more classes as the model is retrained.
+The CNN classifies **3 signal types**. Designed to expand to more classes.
 
 | Class | Description | Frequency | Threat Level |
 |-------|-------------|-----------|--------------|
@@ -76,31 +75,27 @@ The CNN currently classifies **3 signal types**. The architecture is designed to
 │               ┌────────────────────────────────────▼───────────────────┐            │
 │               │            Behavioral Inference Engine (BIE)           │            │
 │               │  RSSI tracking · trend analysis · 8 behavioral states  │            │
-│               │  APPEARED / APPROACHING_FAST / STATIONARY / DEPARTED…  │            │
 │               └────────────────────────────────────┬───────────────────┘            │
 │                                              Interface C                             │
-│                            {threat_level, sentence, state, rssi_history}            │
 │                    ┌───────────────────┬────────────┴──────────────┐                │
 │                    ▼                   ▼                            ▼                │
 │          [Local Display]      [Alert Controller]          [AWS Publisher]            │
-│        (Flask / terminal)    (LED · buzzer · sound)       (IoT Core MQTT)           │
-└─────────────────────────────────────────────────────────────────────────────────────┘
-                                                                       │
-                                                                  Interface D
-                                                                       │
-                                                            ┌──────────▼──────────┐
-                                                            │   AWS IoT Core       │
-                                                            │   → Kinesis          │
-                                                            │   → Lambda           │
-                                                            │   → DynamoDB         │
-                                                            └──────────┬──────────┘
-                                                                       │ WebSocket
-                                                            ┌──────────▼──────────┐
-                                                            │   React Dashboard    │
-                                                            │   (live mode)        │
-                                                            └─────────────────────┘
+│          (terminal/Flask)    (LED · buzzer · sound)       (IoT Core stub)           │
+│                                                                     │                │
+│                                              ┌──────────────────────┘                │
+│                                              ▼                                       │
+│                                     [WsBroadcastServer]                              │
+│                                     ws://localhost:8765                              │
+└─────────────────────────────────────────────┬───────────────────────────────────────┘
+                                              │ WebSocket (live CNN data)
+                                   ┌──────────▼──────────┐
+                                   │   React Dashboard    │
+                                   │   Phosphor Radar     │
+                                   │   Signal Cards       │
+                                   │   Alert Log          │
+                                   └─────────────────────┘
 
-[ESP32S + Grove sensors] ──MQTT──► Pi 5  (Interface E — temperature, humidity, motion, sound)
+[ESP32S + Grove sensors] ──MQTT──► Pi 5  (temperature, humidity, motion, sound)
 ```
 
 ---
@@ -112,7 +107,6 @@ SpectrumEye/
 │
 ├── simulation/
 │   └── simulation_final.py          # Physics-based IQ → spectrogram generator
-│                                    # (OOK key signal, narrowband FM, OFDM LTE)
 │
 ├── ml/                              # CNN training pipeline
 │   ├── augment.py                   # 7 augmentation transforms per image
@@ -121,56 +115,47 @@ SpectrumEye/
 │   ├── evaluate.py                  # --quick / --folder / --image evaluation
 │   ├── generate_test_batch.py       # Level 2 test set generator (seed=777)
 │   ├── prepare_colab_zip.py         # Packages ml_training_v2.zip for Colab upload
-│   ├── collect_synthetic.py         # Legacy: simple pixel-paint synthetic generator
-│   ├── requirements.txt             # Python dependencies
+│   ├── collect_synthetic.py         # Simple pixel-paint synthetic generator
+│   ├── requirements.txt             # ML training dependencies (Python 3.12)
 │   ├── setup_env.sh                 # pyenv + venv setup helper
 │   ├── notebooks/
-│   │   └── SpectrumEye_Training.ipynb   # 9-cell Colab notebook (upload → train → download)
-│   ├── dataset/
-│   │   ├── raw/                     # 400 physics-based PNGs per class
-│   │   ├── augmented/               # 1 400 PNGs per class (7× augmentation)
-│   │   ├── train/                   # 980 per class  (70%)
-│   │   ├── val/                     # 210 per class  (15%)
-│   │   └── test/                    # 210 per class  (15%)
+│   │   └── SpectrumEye_Training.ipynb   # 9-cell Colab training notebook
 │   └── models/
-│       ├── production/
-│       │   └── spectromeye_best.keras   # ← evaluate.py default model
 │       └── v2_colab/
-│           ├── best_model.keras         # Same weights, with training artefacts
-│           ├── config.json
-│           ├── history.json
+│           ├── config.json              # Training hyperparameters + accuracy
+│           ├── history.json             # Per-epoch loss/accuracy
 │           ├── classification_report.txt
 │           ├── confusion_matrix.png
 │           └── training_curves.png
+│           # spectromeye_best.keras excluded from repo (large binary)
+│           # retrain with ml/train.py or Colab notebook
 │
 ├── edge/                            # Raspberry Pi 5 runtime
-│   ├── main.py                      # Orchestration loop (--sim / --demo / --socket)
+│   ├── main.py                      # Orchestration loop (--sim/--demo/--socket/--display ws)
 │   ├── classifier.py                # CNN inference wrapper (Interface B)
 │   ├── bie.py                       # Behavioral Inference Engine (Interface C)
 │   ├── rssi_tracker.py              # Re-exports RSSITracker from bie.py
+│   ├── ws_server.py                 # WebSocket broadcast server → React dashboard
 │   ├── sensor_fusion.py             # ESP32 MQTT subscriber (Interface E)
 │   ├── aws_publisher.py             # AWS IoT Core publisher stub (Interface D)
 │   ├── alert_controller.py          # Threat alerts: terminal · GPIO · sound
 │   └── local_display.py             # Terminal (ANSI) or Flask (HDMI) display
 │
-├── cloud/                           # AWS infrastructure (future)
+├── cloud/                           # AWS infrastructure (planned — Phase 6)
 │   ├── cdk/                         # AWS CDK stack (not yet written)
-│   └── lambda/                      # Lambda functions (not yet written)
+│   ├── lambda/                      # Lambda functions (not yet written)
+│   └── README.md
 │
 ├── webapp/                          # React dashboard
 │   ├── src/
 │   │   ├── main.tsx                 # Entry point
-│   │   ├── SpectrumEyeDashboard.jsx # Dashboard — simulation + future live mode
-│   │   └── index.css                # Global styles
+│   │   ├── SpectrumEyeDashboard.jsx # Phosphor radar + signal cards
+│   │   └── index.css                # Global styles + animations
 │   ├── index.html
 │   ├── vite.config.ts
 │   └── package.json
 │
-├── docs/                            # Design references (git-ignored)
-│   ├── SpectrumEye_Interface_Contract.md
-│   ├── SpectrumEye_CS_Roadmap.md
-│   └── SpectrumEye_Dashboard.jsx    # Original full 9-class design reference
-│
+├── requirements.txt                 # Edge + simulation dependencies (Python 3.12)
 ├── .gitignore
 └── README.md
 ```
@@ -179,7 +164,9 @@ SpectrumEye/
 
 ## Quick Start
 
-### 1. Run the Dashboard (demo mode — no hardware needed)
+### 1. React Dashboard (standalone — no hardware needed)
+
+The dashboard runs with a built-in JavaScript simulation and switches to live CNN data automatically when the edge server is connected.
 
 ```bash
 cd webapp
@@ -188,109 +175,129 @@ npm run dev
 # → http://localhost:5173
 ```
 
-Click **▶ SIMULATE KEY FOB** to watch a scripted scenario: a key-fob signal appears, approaches, holds position, then departs — with real-time BIE assessment and alert log updates.
+The header badge shows **◌ SIMULATION** (amber) when running on JS data and **● LIVE · CNN** (green) when receiving real pipeline output.
 
-### 2. Set Up the ML Environment
+---
 
-Requires Python 3.12 (TensorFlow is not yet compatible with 3.13+).
+### 2. Full End-to-End Pipeline (edge + dashboard)
+
+**Step 1 — Install Python 3.12**
+
+TensorFlow 2.18 does not support Python 3.13+.
 
 ```bash
-# Install pyenv if not present (Arch Linux)
-sudo pacman -S pyenv
-
-# Add to ~/.zshrc / ~/.bashrc
-export PYENV_ROOT="$HOME/.pyenv"
-export PATH="$PYENV_ROOT/bin:$PATH"
-eval "$(pyenv init -)"
-
-# Set up the ML virtual environment
-pyenv install 3.12.9
-cd ml
-bash setup_env.sh          # creates .venv and installs requirements.txt
-source .venv/bin/activate
+# Arch Linux
+sudo pacman -S python312
 ```
+
+**Step 2 — Create the edge venv**
+
+```bash
+# From the project root
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+**Step 3 — Run the pipeline**
+
+```bash
+# Terminal 1 — edge pipeline with WebSocket output (loops indefinitely)
+source .venv/bin/activate
+python edge/main.py --demo --display ws
+
+# Terminal 2 — React dashboard
+cd webapp && npm run dev
+```
+
+Open http://localhost:5173 — the dashboard connects automatically and switches to live CNN data.
+
+**Stop with `Ctrl+C` in Terminal 1.**
+
+#### Pipeline modes
+
+| Flag | Behaviour |
+|------|-----------|
+| `--sim` | Random RSSI drift across 3 bands, CNN runs on synthetic spectrograms, runs forever |
+| `--demo` | Scripted 4-phase scenario (see below), CNN bypassed with forced classes, loops forever |
+| `--socket PATH` | Hardware mode — reads real frames from Unix socket written by DSP partner code |
+
+#### `--demo` scenario (loops)
+
+```
+Phase 1 (15 frames, ~7s)   LTE background only
+Phase 2 (20 frames, ~10s)  Walkie-talkie appears and approaches fast
+Phase 3 (10 frames, ~5s)   Walkie-talkie holds, Key_Signal appears
+Phase 4 (10 frames, ~5s)   Key_Signal departs
+Pause  (10 frames, ~5s)    LTE cooldown
+→ repeat
+```
+
+---
 
 ### 3. Evaluate the Trained Model
 
 ```bash
-cd /path/to/SpectrumEye
+source .venv/bin/activate
 
-# Level 1 — quick: 30 fresh simulation images, in-memory, no files needed
+# Level 1 — 30 fresh images, in-memory (fastest)
 python ml/evaluate.py --quick
 
-# Level 2 — batch: generate 300 unseen images to disk, then evaluate
-python ml/generate_test_batch.py          # → test_batch/ (300 PNGs, seed=777)
+# Level 2 — 300 unseen images to disk
+python ml/generate_test_batch.py   # → test_batch/ (seed=777)
 python ml/evaluate.py --folder test_batch/
 
 # Single image
 python ml/evaluate.py --image path/to/spectrogram.png
 ```
 
-### 4. Retrain the CNN (Google Colab — recommended)
+---
 
-The model trains best on a free Colab T4 GPU (~20–30 min for 50 epochs).
+### 4. Retrain the CNN (Google Colab)
 
 ```bash
-# Step 1: Generate the training dataset locally
+# Step 1: Generate training dataset
 python simulation/simulation_final.py
-# → simulation/dataset_rf/  (1 200 raw PNGs)
+# → simulation/dataset_rf/  (1 500 raw PNGs)
 
-# Step 2: Package everything for Colab
+# Step 2: Package for Colab
 python ml/prepare_colab_zip.py
-# → ml_training_v2.zip  (~25 MB)
+# → ml_training_v2.zip
 
-# Step 3: Open Colab and run the notebook
-# ml/notebooks/SpectrumEye_Training.ipynb
-# Cell 3: upload ml_training_v2.zip
-# Cell 4: augment (1 200 raw → 4 200 augmented)
-# Cell 5: split into train/val/test
-# Cell 7: train 50 epochs on T4 GPU
-# Cell 9: download spectromeye_v2_colab.zip
-
-# Step 4: Install the trained model
-# Extract best_model.keras → ml/models/production/spectromeye_best.keras
+# Step 3: Run ml/notebooks/SpectrumEye_Training.ipynb on Colab T4 GPU
+# Step 4: Download best_model.keras → ml/models/production/spectromeye_best.keras
 ```
 
-### 5. Run the Edge Pipeline (simulation mode)
+ML venv setup:
 
 ```bash
-# Requires: ml/models/production/spectromeye_best.keras
-source ml/.venv/bin/activate
-
-# Simulation mode — synthetic frames, no hardware
-python edge/main.py --sim
-
-# Scripted demo — 4-phase scenario (appeared → approach → hover → depart)
-python edge/main.py --demo
-
-# Hardware mode — reads from Unix socket (real RTL-SDR pipeline)
-python edge/main.py --socket /tmp/spectromeye_frames.sock
+cd ml
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
 ---
 
 ## Dataset
 
-Generated with a physics-based IQ simulation (`simulation/simulation_final.py`) that replicates the real RTL-SDR hardware signal chain:
+Generated with `simulation/simulation_final.py` — replicates the real RTL-SDR signal chain:
 
 ```
-Random IQ signal → AWGN noise (IQ level, SNR ≈ 6 dB) → STFT → dBFS normalization → 224×224 PNG
+Random IQ signal → AWGN noise → STFT → dBFS normalization → 224×224 PNG
 ```
-
-The normalization is fixed (not auto-scaled), so the noise floor always maps to the same dark pixel value — consistent with a real receiver at fixed gain.
 
 | Split | Per class | Total |
 |-------|-----------|-------|
-| Raw (generated) | 400 | 1 200 |
+| Raw (generated) | 500 | 1 500 |
 | Augmented | 1 400 | 4 200 |
 | Train (70%) | 980 | 2 940 |
 | Val (15%) | 210 | 630 |
 | Test (15%) | 210 | 630 |
 
-**Augmentation transforms** (applied in `ml/augment.py`):
-`time_shift` · `freq_shift` · `awgn` · `amplitude_scale` · `noise_mix` · `time_flip` + original
+**Augmentation** (`ml/augment.py`): `time_shift` · `freq_shift` · `awgn` · `amplitude_scale` · `noise_mix` · `time_flip` + original
 
-**Signal models** (in `simulation/simulation_final.py`):
+**Signal models:**
 - **Key_Signal** — OOK keying: random 10-bit code, carrier at 50 Hz, burst pattern
 - **Walkie_Talkie** — Narrowband FM: 5 Hz voice modulation, ±50 Hz deviation
 - **LTE** — OFDM: 50 subcarriers, 200 Hz bandwidth, random phase per subcarrier
@@ -307,13 +314,10 @@ The normalization is fixed (not auto-scaled), so the noise floor always maps to 
 | Input | 224 × 224 × 1 (grayscale) |
 | Output | 3 classes (softmax) |
 | Optimizer | Adam, lr = 1e-4 |
-| Batch size | 32 |
-| Epochs | 50 (full run, no early stop) |
+| Epochs | 50 |
 | Test accuracy | **100%** (630 images, seed=777) |
 | Inference time | 75.6 ms / frame (dev CPU) |
 | Training platform | Google Colab T4 GPU |
-
-The confidence threshold in `evaluate.py` is 0.60 — predictions below this are reported as `Unknown`.
 
 ---
 
@@ -321,60 +325,48 @@ The confidence threshold in `evaluate.py` is 0.60 — predictions below this are
 
 `edge/bie.py` translates a stream of CNN outputs into behavioral assessments.
 
-**8 behavioral states:**
-
 | State | Meaning |
 |-------|---------|
 | `APPEARED` | Signal just became visible |
 | `APPROACHING_SLOW` | RSSI rising slowly |
 | `APPROACHING_FAST` | RSSI rising fast — high priority |
-| `STATIONARY` | RSSI stable — source not moving |
+| `STATIONARY` | RSSI stable |
 | `DEPARTING_SLOW` | RSSI falling slowly |
 | `DEPARTING_FAST` | RSSI falling fast |
-| `ERRATIC` | RSSI fluctuating — source moving unpredictably |
+| `ERRATIC` | RSSI fluctuating unpredictably |
 | `DISAPPEARED` | Signal lost |
-
-The BIE also fuses environmental data from ESP32S sensors (temperature, humidity, motion, sound) to produce a final context-aware output sentence displayed on the dashboard.
 
 ---
 
-## Interface Contract
+## WebSocket Protocol
 
-All data handoffs between components follow the Interface Contract defined in `docs/SpectrumEye_Interface_Contract.md`.
+`edge/ws_server.py` broadcasts on `ws://localhost:8765`. Each message is JSON:
 
-**Interface A — Spectrogram frame** (DSP → CNN):
-- `numpy.ndarray`, shape `(224, 224)`, dtype `uint8`, grayscale
-- Normalization: `pixel = clip((P_dBFS − (−100)) / 100 × 255, 0, 255)`
-- STFT: `nfft=256`, Hanning window, 50% overlap, two-sided (complex IQ)
-
-**Interface B — CNN output** (Classifier → BIE):
 ```json
 {
-  "frame_id": 42,
-  "timestamp_ms": 1704067200000,
-  "center_freq_hz": 433920000,
-  "predicted_class": "Key_Signal",
-  "confidence": 0.9741,
-  "confidence_level": "HIGH",
-  "all_probabilities": {"Key_Signal": 0.9741, "Walkie_Talkie": 0.0201, "LTE": 0.0058},
-  "inference_time_ms": 75.6,
-  "model_version": "v2_colab"
-}
-```
-
-**Interface C — BIE output** (BIE → Dashboard/Cloud):
-```json
-{
-  "timestamp_ms": 1704067200000,
-  "signal_class": "Key_Signal",
-  "behavioral_state": "APPROACHING_FAST",
   "threat_level": "CRITICAL",
-  "rssi_dbm": -48,
-  "rssi_trend_db_per_s": 4.2,
-  "assessment": "Key fob signal approaching rapidly — possible remote device in perimeter",
-  "env_context": {"temperature_c": 28.4, "humidity_pct": 72, "motion_detected": false}
+  "threat_score": 9,
+  "timestamp_ms": 1704067200000,
+  "signals": [
+    {
+      "id":        "Key_Signal",
+      "cls":       "Key_Signal",
+      "state":     "APPROACHING_FAST",
+      "rssi":      -48.0,
+      "conf":      0.94,
+      "bearing":   52,
+      "trend":     4.2,
+      "activeFor": 23
+    }
+  ],
+  "alert": {
+    "level":   "CRITICAL",
+    "message": "Key fob approaching rapidly — possible remote device"
+  }
 }
 ```
+
+The dashboard connects on load, auto-reconnects every 3 seconds on disconnect, and falls back to the JS simulation while the server is offline.
 
 ---
 
@@ -384,38 +376,32 @@ All data handoffs between components follow the Interface Contract defined in `d
 |-------|-------------|--------|
 | 1 | Environment & project setup | ✅ Complete |
 | 2 | Dataset collection & augmentation | ✅ Complete |
-| 3 | Dashboard MVP (simulation) | ✅ Complete |
-| 4 | CNN training pipeline | ✅ Complete — 100% accuracy |
-| 5 | Behavioral Inference Engine | ✅ Complete |
+| 3 | CNN training pipeline | ✅ Complete — 100% accuracy |
+| 4 | Behavioral Inference Engine | ✅ Complete |
+| 5 | Radar dashboard + live WebSocket pipeline | ✅ Complete |
 | 6 | AWS cloud pipeline | 🔲 Stub ready — CDK to be written |
 | 7 | Edge integration (Pi 5 + RTL-SDR) | 🔲 Code ready — hardware not yet connected |
 | 8 | TFLite INT8 conversion | 🔲 Needed for <50ms on Pi 5 |
-| 9 | Expand to more signal classes | 🔲 Future — DJI OcuSync, FPV, WiFi, ADS-B |
-| 10 | Integration testing & demo | 🔲 After hardware is connected |
+| 9 | Expand signal classes | 🔲 DJI OcuSync, FPV, WiFi, ADS-B |
 
 ---
 
 ## Tech Stack
 
 **Machine Learning**
-- Python 3.12 · TensorFlow / Keras · NumPy · SciPy · Pillow · scikit-learn
-- Training: Google Colab T4 GPU (free tier)
+Python 3.12 · TensorFlow / Keras · NumPy · SciPy · Pillow · scikit-learn · Google Colab T4
 
-**Edge (Raspberry Pi 5)**
-- Python 3.12 · pyrtlsdr · NumPy · SciPy
-- Flask (local HDMI display) · paho-mqtt (ESP32 sensors) · gpiod (GPIO alerts)
+**Edge Pipeline**
+Python 3.12 · websockets · NumPy · SciPy · Pillow · Flask · psutil
 
 **Dashboard**
-- React 19 · TypeScript · Vite 7 · Tailwind CSS v4 · Recharts 3.7
+React 19 · Vite 7 · Tailwind CSS v4 · Canvas API (phosphor radar)
 
 **Cloud (planned)**
-- AWS IoT Core · Kinesis Data Streams · Lambda · DynamoDB · API Gateway WebSocket
+AWS IoT Core · Kinesis · Lambda · DynamoDB · API Gateway WebSocket
 
 **Hardware**
-- Raspberry Pi 5 (8 GB)
-- RTL-SDR Blog V4 (24 MHz – 1.766 GHz, ~2 MHz instantaneous BW)
-- Basys 3 FPGA (Artix-7) — optional DSP acceleration
-- ESP32S + Grove sensors (temperature, humidity, PIR motion, sound)
+Raspberry Pi 5 (8 GB) · RTL-SDR Blog V4 · Basys 3 FPGA (Artix-7) · ESP32S + Grove sensors
 
 ---
 
