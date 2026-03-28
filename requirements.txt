@@ -8,36 +8,37 @@
 #
 # Pi 5 (Debian Trixie, Python 3.13):
 #   sudo apt install rtl-sdr
-#   python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
+#   python3 -m venv .venv && source .venv/bin/activate
+#   pip install --prefer-binary -r requirements.txt
 
-# Core numerics
-numpy==1.26.4
+# Core numerics — >=2.0 has Python 3.13 binary wheels (no Fortran compiler needed)
+numpy>=2.0.0
 
-# Signal processing (simulation_final.py)
-scipy==1.13.1
+# Signal processing — >=1.14 has Python 3.13 binary wheels
+scipy>=1.14.0
 
 # Image handling
-Pillow==10.4.0
+Pillow>=10.4.0
 
 # CNN inference (classifier.py loads the .keras model)
 # TF 2.21+ supports Python 3.13 (Pi 5 / Debian Trixie)
 tensorflow>=2.18.0
 
 # WebSocket server (ws_server.py → React dashboard)
-websockets==15.0.1
+websockets>=12.0
+
+# Spectrogram plotting (data_collector.py, rtlsdr_source.py)
+matplotlib>=3.9.0
 
 # Optional — Flask display backend (--display flask)
-flask==3.1.0
+flask>=3.0.0
 
 # Optional — CPU/RAM stats in status heartbeat (main.py)
-psutil==6.1.1
+psutil>=6.0.0
 
 # Optional — AWS cloud pipeline (aws_publisher.py)
-# boto3==1.35.0
+# boto3>=1.35.0
 
 # RTL-SDR hardware — uses system `rtl_sdr` binary, no Python library needed.
 # Install system package:  sudo apt install rtl-sdr  (Debian/Pi)
 #                          sudo pacman -S rtl-sdr    (Arch)
-
-# Spectrogram plotting + image save (data_collector.py, playground.py)
-matplotlib==3.9.2
