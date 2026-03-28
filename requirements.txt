@@ -1,12 +1,14 @@
 # SpectrumEye — Edge + Simulation requirements
 # Used by: edge/main.py, simulation/simulation_final.py
 #
-# Python 3.12 required — TensorFlow does not support 3.13+
-# Install Python 3.12 on Arch: sudo pacman -S python312
+# Python 3.11, 3.12, or 3.13 supported (TF 2.21+ supports 3.13)
 #
-# Create venv:  python3.12 -m venv .venv
-# Activate:     source .venv/bin/activate
-# Install:      pip install -r requirements.txt
+# Dev (Arch, Python 3.12):
+#   python3.12 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
+#
+# Pi 5 (Debian Trixie, Python 3.13):
+#   sudo apt install rtl-sdr
+#   python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
 
 # Core numerics
 numpy==1.26.4
@@ -18,8 +20,8 @@ scipy==1.13.1
 Pillow==10.4.0
 
 # CNN inference (classifier.py loads the .keras model)
-# On Pi 5, replace with tflite-runtime once INT8 conversion is done
-tensorflow==2.18.0
+# TF 2.21+ supports Python 3.13 (Pi 5 / Debian Trixie)
+tensorflow>=2.18.0
 
 # WebSocket server (ws_server.py → React dashboard)
 websockets==15.0.1
@@ -33,13 +35,9 @@ psutil==6.1.1
 # Optional — AWS cloud pipeline (aws_publisher.py)
 # boto3==1.35.0
 
-# setuptools — required by pyrtlsdr (pkg_resources dependency)
-setuptools>=70.0.0
-
-# RTL-SDR hardware (data_collector.py, playground.py)
-# PyPI 0.3.0 uses `imp` which was removed in Python 3.12 — install from GitHub:
-#   pip install git+https://github.com/roger-/pyrtlsdr.git
-# pyrtlsdr==0.3.0
+# RTL-SDR hardware — uses system `rtl_sdr` binary, no Python library needed.
+# Install system package:  sudo apt install rtl-sdr  (Debian/Pi)
+#                          sudo pacman -S rtl-sdr    (Arch)
 
 # Spectrogram plotting + image save (data_collector.py, playground.py)
 matplotlib==3.9.2

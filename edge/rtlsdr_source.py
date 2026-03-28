@@ -1,125 +1,113 @@
 """
-edge/rtlsdr_source.py — Real-time RTL-SDR Blog V4 frame source
+edge/rtlsdr_source.py — Real-time RTL-SDR frame source
 
-Sweeps 10 frequency bands in round-robin order.
-For each band:
-  1. Tunes the SDR to the band's center frequency
-  2. Waits 25 ms for the R828D PLL to settle
-  3. Captures 256×1024 IQ samples (~128 ms at 2.048 MSPS)
-  4. Generates a 224×224 uint8 spectrogram using matplotlib Agg —
-     identical preprocessing to training data (data_collector.py)
-  5. Computes RSSI (dBFS) from IQ power
-  6. Yields a sweep_frame dict (Interface A/A+) for EdgePipeline
+Uses the system `rtl_sdr` binary instead of pyrtlsdr, so it works on
+any Python version (3.11, 3.12, 3.13) without C-library symbol issues.
 
-RTL-SDR Blog V4 hardware notes
--------------------------------
-- Receive-only passive device: cannot transmit, no RF damage possible.
-- Sample rate: fixed at 2.048 MSPS (stable limit for R828D; DO NOT raise).
-- Gain: "auto" by default — lets the tuner avoid ADC saturation automatically.
-  Pass --gain <dB> (e.g. 30) only if "auto" gives poor sensitivity.
-- PLL settling: 25 ms after each retune before samples are valid (not harmful
-  if skipped, just gives invalid samples for one frame).
-- Thermal: the dongle warms up during continuous use — this is normal.
-  Ensure airflow; do not enclose in an airtight case.
-- USB power: ~300 mA draw from the Pi 5 USB port (well within 900 mA limit).
-- Cleanup: sdr.close() is always called via try/finally so the USB device
-  is released cleanly on exit or error.
+Requires the system package:
+    sudo apt install rtl-sdr          # Debian / Raspberry Pi OS
+    sudo pacman -S rtl-sdr            # Arch Linux (dev machine)
 
-Usage:
-    source = RTLSDRFrameSource()
-    for frame in source.frames():
-        pipeline.process(frame)
-
-    # Custom band subset or gain:
-    source = RTLSDRFrameSource(
-        bands=["walkie_talkie", "aircraft_tracking", "cellular_network"],
-        gain=30,
-    )
+Each band capture calls `rtl_sdr` as a subprocess, reads raw uint8 IQ
+from stdout, and converts to complex float — identical signal pipeline
+to the original pyrtlsdr implementation.
 """
 
 import io
 import logging
+import shutil
+import subprocess
 import time
 from typing import Iterator, Optional
 
-# matplotlib MUST use Agg (non-interactive) backend before any pyplot import.
-# This matches the training data pipeline in data_collector.py and avoids
-# display errors on the headless Pi.
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 import numpy as np
 from PIL import Image
-from rtlsdr import RtlSdr
 
 log = logging.getLogger(__name__)
 
 # ─── HARDWARE CONSTANTS ───────────────────────────────────────────
 
-# Stable sample rate for RTL-SDR Blog V4 (R828D tuner).
-# 2.4 MSPS is also stable but 2.048 matches training data exactly.
-_SAMPLE_RATE_HZ: float = 2.048e6
-
-# Number of IQ samples per capture per band.
-# 256 * 1024 = 262 144 samples → ~128 ms at 2.048 MSPS.
-# This matches data_collector.py and produces a good spectrogram.
-_NUM_SAMPLES: int = 256 * 1024
-
-# PLL settling time (seconds) after each frequency change.
-# The R828D needs ~20–25 ms to lock its synthesiser.
-# Samples taken before this settle are meaningless but cause no damage.
-_PLL_SETTLE_SEC: float = 0.025
+_SAMPLE_RATE_HZ: int = 2_048_000          # stable for RTL-SDR Blog V4
+_NUM_SAMPLES:    int = 256 * 1024         # ~128 ms at 2.048 MSPS
+_CAPTURE_TIMEOUT = 15                     # subprocess timeout (seconds)
 
 # ─── FREQUENCY BANDS ─────────────────────────────────────────────
 
-# One fixed center frequency per training class.
-# Frequencies are chosen to land in the most active part of each band
-# and are well within the RTL-SDR Blog V4 range (500 kHz – 1.75 GHz).
-#
-# Scan order is also the round-robin order: lower frequencies first
-# so initial results appear quickly after startup.
 _ALL_BANDS: list[dict] = [
-    # band_id must match the CNN class label exactly
-    {"band_id": "radio_fm",             "center_freq_hz":    98_000_000},  # FM broadcast center
-    {"band_id": "air_traffic",          "center_freq_hz":   122_000_000},  # Int. emergency 121.5 area
-    {"band_id": "noaa",                 "center_freq_hz":   137_500_000},  # NOAA APT center
-    {"band_id": "local_repeaters",      "center_freq_hz":   146_000_000},  # 2m band center
-    {"band_id": "maritime",             "center_freq_hz":   156_800_000},  # VHF Ch16 distress/calling
-    {"band_id": "short_range_devices",  "center_freq_hz":   315_000_000},  # 315 MHz ISM (car keys)
-    {"band_id": "wireless_controllers", "center_freq_hz":   433_920_000},  # 433.92 MHz ISM exact
-    {"band_id": "walkie_talkie",        "center_freq_hz":   446_000_000},  # PMR446 center
-    {"band_id": "cellular_network",     "center_freq_hz":   900_000_000},  # GSM-900 center
-    {"band_id": "aircraft_tracking",    "center_freq_hz": 1_090_000_000},  # ADS-B exact frequency
+    {"band_id": "radio_fm",             "center_freq_hz":    98_000_000},
+    {"band_id": "air_traffic",          "center_freq_hz":   122_000_000},
+    {"band_id": "noaa",                 "center_freq_hz":   137_500_000},
+    {"band_id": "local_repeaters",      "center_freq_hz":   146_000_000},
+    {"band_id": "maritime",             "center_freq_hz":   156_800_000},
+    {"band_id": "short_range_devices",  "center_freq_hz":   315_000_000},
+    {"band_id": "wireless_controllers", "center_freq_hz":   433_920_000},
+    {"band_id": "walkie_talkie",        "center_freq_hz":   446_000_000},
+    {"band_id": "cellular_network",     "center_freq_hz":   900_000_000},
+    {"band_id": "aircraft_tracking",    "center_freq_hz": 1_090_000_000},
 ]
 
-# Validate all frequencies are within Blog V4 range
-_MIN_FREQ_HZ = 500_000       # 500 kHz
-_MAX_FREQ_HZ = 1_750_000_000 # 1.75 GHz
+_MIN_FREQ_HZ = 500_000
+_MAX_FREQ_HZ = 1_750_000_000
 for _b in _ALL_BANDS:
     assert _MIN_FREQ_HZ <= _b["center_freq_hz"] <= _MAX_FREQ_HZ, (
-        f"Frequency {_b['center_freq_hz']} for {_b['band_id']} out of RTL-SDR Blog V4 range"
+        f"{_b['band_id']}: {_b['center_freq_hz']} out of RTL-SDR Blog V4 range"
     )
 
 
-# ─── SPECTROGRAM GENERATION ───────────────────────────────────────
+# ─── IQ CAPTURE ──────────────────────────────────────────────────
 
-def _iq_to_spectrogram(samples: np.ndarray, fs: float) -> np.ndarray:
+def _capture_iq(freq_hz: int, gain: float | str, device_index: int = 0) -> np.ndarray:
     """
-    Convert complex IQ samples to a 224×224 uint8 grayscale spectrogram.
+    Capture IQ samples by calling the `rtl_sdr` system binary.
 
-    Uses matplotlib Agg with the EXACT same parameters as data_collector.py
-    so the output matches the training data distribution pixel-for-pixel.
+    rtl_sdr writes raw uint8 interleaved I/Q to stdout.
+    We convert to complex float: value = (uint8 - 127.5) / 127.5
 
     Args:
-        samples: complex IQ array from sdr.read_samples()
-        fs:      sample rate in Hz
+        freq_hz:      center frequency in Hz
+        gain:         tuner gain in dB, or "auto"
+        device_index: RTL-SDR device index (0 for single dongle)
 
     Returns:
-        224×224 uint8 numpy array (grayscale, 0=noise floor, 255=strong signal)
+        complex64 numpy array of length _NUM_SAMPLES
+    """
+    cmd = [
+        "rtl_sdr",
+        "-d", str(device_index),
+        "-f", str(freq_hz),
+        "-s", str(_SAMPLE_RATE_HZ),
+        "-n", str(_NUM_SAMPLES),
+    ]
+    if gain != "auto":
+        cmd += ["-g", str(gain)]
+    cmd.append("-")   # write to stdout
+
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        check=True,
+        timeout=_CAPTURE_TIMEOUT,
+    )
+
+    raw = np.frombuffer(result.stdout, dtype=np.uint8).astype(np.float32)
+    i_samples = (raw[0::2] - 127.5) / 127.5
+    q_samples = (raw[1::2] - 127.5) / 127.5
+    return (i_samples + 1j * q_samples).astype(np.complex64)
+
+
+# ─── SIGNAL PROCESSING ───────────────────────────────────────────
+
+def _iq_to_spectrogram(samples: np.ndarray) -> np.ndarray:
+    """
+    Convert complex IQ to 224×224 uint8 grayscale spectrogram.
+    Identical parameters to data_collector.py for training data match.
     """
     fig = plt.figure(figsize=(2.24, 2.24), dpi=100)
-    plt.specgram(samples, NFFT=256, Fs=fs, cmap="gray")
+    plt.specgram(samples, NFFT=256, Fs=_SAMPLE_RATE_HZ, cmap="gray")
     plt.axis("off")
     plt.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
     plt.margins(0, 0)
@@ -127,26 +115,15 @@ def _iq_to_spectrogram(samples: np.ndarray, fs: float) -> np.ndarray:
     buf = io.BytesIO()
     plt.savefig(buf, format="png", dpi=100)
     plt.close(fig)
-
     buf.seek(0)
-    img = Image.open(buf).convert("L")   # ensure single-channel grayscale
-    img = img.resize((224, 224), Image.LANCZOS)  # guarantee exact size
+
+    img = Image.open(buf).convert("L")
+    img = img.resize((224, 224), Image.LANCZOS)
     return np.array(img, dtype=np.uint8)
 
 
 def _compute_rssi(samples: np.ndarray) -> float:
-    """
-    Compute received signal strength in dBFS from complex IQ samples.
-
-    rtlsdr normalises samples to approximately [-1+0j, 1+0j] complex range,
-    so 0 dBFS = full ADC swing.
-
-    Args:
-        samples: complex IQ array from sdr.read_samples()
-
-    Returns:
-        RSSI in dBFS (typically -80 to -20 for real signals)
-    """
+    """Compute received signal strength in dBFS from IQ power."""
     power = float(np.mean(np.abs(samples) ** 2))
     return float(10.0 * np.log10(power + 1e-12))
 
@@ -157,16 +134,16 @@ class RTLSDRFrameSource:
     """
     Real-time sweep frame source using RTL-SDR Blog V4.
 
-    Sweeps through the configured bands in round-robin order.
-    Yields sweep_frame dicts (Interface A/A+) compatible with EdgePipeline.
+    Sweeps through all configured bands in round-robin order.
+    Yields sweep_frame dicts compatible with EdgePipeline (Interface A/A+).
+
+    Each band opens the device via `rtl_sdr` subprocess — no persistent
+    device handle, no pyrtlsdr dependency.
 
     Args:
-        bands:    list of band_id strings to include in the sweep.
-                  Defaults to all 10 bands. Pass a subset to limit scanning.
-        gain:     SDR gain in dB, or "auto" (default).
-                  "auto" is recommended — it prevents ADC saturation on
-                  strong nearby signals without manual adjustment.
-        device_index: RTL-SDR device index (0 for single dongle).
+        bands:        list of band_id strings to scan (default: all 10)
+        gain:         tuner gain in dB, or "auto" (recommended)
+        device_index: RTL-SDR device index (0 for single dongle)
     """
 
     def __init__(
@@ -175,7 +152,6 @@ class RTLSDRFrameSource:
         gain: float | str = "auto",
         device_index: int = 0,
     ) -> None:
-        # Select bands
         if bands is None:
             self._bands = list(_ALL_BANDS)
         else:
@@ -188,106 +164,57 @@ class RTLSDRFrameSource:
         self._gain         = gain
         self._device_index = device_index
         self._frame_id     = 0
-        self._sdr: Optional[RtlSdr] = None
-
-    # ── Public API ────────────────────────────────────────────────
 
     def frames(self) -> Iterator[dict]:
-        """
-        Open the RTL-SDR, then yield sweep_frames indefinitely.
-
-        Handles cleanup via try/finally — sdr.close() is always called,
-        even on exception or KeyboardInterrupt, so the USB device is
-        released cleanly.
-        """
-        log.info("RTLSDRFrameSource: opening device (index=%d)", self._device_index)
-        try:
-            self._sdr = RtlSdr(self._device_index)
-            self._sdr.sample_rate = _SAMPLE_RATE_HZ
-            self._sdr.gain        = self._gain
-            log.info(
-                "RTLSDRFrameSource: ready — sample_rate=%.3f MSPS  gain=%s  bands=%d",
-                _SAMPLE_RATE_HZ / 1e6,
-                self._gain,
-                len(self._bands),
-            )
-            yield from self._sweep_loop()
-        except Exception as exc:
-            log.error("RTLSDRFrameSource: fatal error: %s", exc)
-            raise
-        finally:
-            if self._sdr is not None:
-                try:
-                    self._sdr.close()
-                    log.info("RTLSDRFrameSource: SDR device closed cleanly")
-                except Exception:
-                    pass  # device may already be gone
-                self._sdr = None
-
-    # ── Sweep loop ────────────────────────────────────────────────
-
-    def _sweep_loop(self) -> Iterator[dict]:
-        """Round-robin through all configured bands indefinitely."""
+        """Yield sweep_frames indefinitely, sweeping all bands round-robin."""
+        log.info(
+            "RTLSDRFrameSource: starting sweep — %d bands, gain=%s",
+            len(self._bands), self._gain,
+        )
         band_idx = 0
         while True:
             band     = self._bands[band_idx]
             band_idx = (band_idx + 1) % len(self._bands)
-
-            frame = self._capture_band(band)
+            frame    = self._capture_band(band)
             if frame is not None:
                 yield frame
 
     def _capture_band(self, band: dict) -> Optional[dict]:
-        """
-        Tune to one band, capture IQ, generate spectrogram, return sweep_frame.
-
-        Returns None if capture fails (logs the error, continues sweep).
-        """
+        """Capture one band, return sweep_frame or None on error."""
         freq_hz = band["center_freq_hz"]
         band_id = band["band_id"]
 
         try:
-            # 1. Retune
-            self._sdr.center_freq = freq_hz
-
-            # 2. PLL settling — wait for R828D synthesiser to lock.
-            #    Without this, the first samples after a retune are from
-            #    the previous frequency (invalid but harmless to hardware).
-            time.sleep(_PLL_SETTLE_SEC)
-
-            # 3. Capture IQ
-            samples = self._sdr.read_samples(_NUM_SAMPLES)
-
-            # 4. Compute RSSI from raw power
+            samples   = _capture_iq(freq_hz, self._gain, self._device_index)
             rssi_dbfs = _compute_rssi(samples)
-            peak_dbfs = rssi_dbfs + 2.0  # headroom estimate
-
-            # 5. Generate 224×224 spectrogram (same pipeline as training data)
-            spectrogram = _iq_to_spectrogram(samples, _SAMPLE_RATE_HZ)
-
+            spectrogram = _iq_to_spectrogram(samples)
+        except subprocess.CalledProcessError as exc:
+            log.warning(
+                "rtl_sdr failed for %s @ %.1f MHz (exit %d): %s",
+                band_id, freq_hz / 1e6, exc.returncode,
+                exc.stderr.decode(errors="replace").strip(),
+            )
+            return None
         except Exception as exc:
-            log.warning("RTLSDRFrameSource: capture failed for %s @ %.1f MHz: %s",
-                        band_id, freq_hz / 1e6, exc)
+            log.warning("capture failed for %s @ %.1f MHz: %s", band_id, freq_hz / 1e6, exc)
             return None
 
-        # 6. Build sweep_frame (Interface A/A+)
         self._frame_id += 1
         return {
             "frame_id":       self._frame_id,
             "timestamp_ms":   int(time.time() * 1000),
             "center_freq_hz": freq_hz,
-            "sample_rate_hz": int(_SAMPLE_RATE_HZ),
+            "sample_rate_hz": _SAMPLE_RATE_HZ,
             "gain_db":        self._gain,
             "spectrogram":    spectrogram,
             "rssi": {
                 "band_id":        band_id,
                 "center_freq_hz": freq_hz,
-                "bandwidth_hz":   int(_SAMPLE_RATE_HZ),
+                "bandwidth_hz":   _SAMPLE_RATE_HZ,
                 "rssi_dbfs":      round(rssi_dbfs, 1),
-                "peak_dbfs":      round(peak_dbfs, 1),
+                "peak_dbfs":      round(rssi_dbfs + 2.0, 1),
                 "occupied":       rssi_dbfs > -90.0,
             },
-            # No _sim_class / _sim_conf — pipeline will run real CNN inference
         }
 
 
@@ -295,9 +222,8 @@ class RTLSDRFrameSource:
 
 def _run_hardware_test() -> None:
     """
-    Open the SDR, capture one frame per band, print RSSI table.
-    Use this to verify the dongle is connected and working before
-    running the full pipeline.
+    Scan all bands once and print an RSSI table.
+    Verifies the rtl_sdr binary and dongle are working.
 
     Run with:
         python edge/rtlsdr_source.py --test
@@ -310,38 +236,33 @@ def _run_hardware_test() -> None:
         datefmt="%H:%M:%S",
     )
 
+    if not shutil.which("rtl_sdr"):
+        print("ERROR: 'rtl_sdr' binary not found.")
+        print("Install with:  sudo apt install rtl-sdr")
+        sys.exit(1)
+
     print("=" * 60)
     print("RTL-SDR Blog V4 — hardware self-test")
     print("=" * 60)
-    print(f"Scanning {len(_ALL_BANDS)} bands once each...\n")
+    print(f"Scanning {len(_ALL_BANDS)} bands (subprocess mode)...\n")
 
     source = RTLSDRFrameSource()
 
-    try:
-        source._sdr = RtlSdr(source._device_index)
-        source._sdr.sample_rate = _SAMPLE_RATE_HZ
-        source._sdr.gain        = source._gain
+    print(f"  {'Band':<22} {'Freq (MHz)':>10}  {'RSSI dBFS':>10}  {'Occupied':>8}  Spec")
+    print(f"  {'-'*22} {'-'*10}  {'-'*10}  {'-'*8}  ----")
 
-        print(f"  {'Band':<22} {'Freq (MHz)':>10}  {'RSSI dBFS':>10}  {'Occupied':>8}  {'Spec shape'}")
-        print(f"  {'-'*22} {'-'*10}  {'-'*10}  {'-'*8}  {'-'*10}")
-
-        for band in _ALL_BANDS:
-            frame = source._capture_band(band)
-            if frame is None:
-                print(f"  {band['band_id']:<22} {'ERROR':>10}")
-                continue
-            rssi     = frame["rssi"]["rssi_dbfs"]
-            occupied = "YES" if frame["rssi"]["occupied"] else "no"
-            spec     = frame["spectrogram"].shape
-            print(
-                f"  {band['band_id']:<22} {band['center_freq_hz']/1e6:>10.3f}  "
-                f"{rssi:>10.1f}  {occupied:>8}  {str(spec)}"
-            )
-
-    finally:
-        if source._sdr is not None:
-            source._sdr.close()
-            print("\nSDR closed cleanly.")
+    for band in _ALL_BANDS:
+        frame = source._capture_band(band)
+        if frame is None:
+            print(f"  {band['band_id']:<22} {'ERROR':>10}")
+            continue
+        rssi     = frame["rssi"]["rssi_dbfs"]
+        occupied = "YES" if frame["rssi"]["occupied"] else "no"
+        spec     = frame["spectrogram"].shape
+        print(
+            f"  {band['band_id']:<22} {band['center_freq_hz']/1e6:>10.3f}"
+            f"  {rssi:>10.1f}  {occupied:>8}  {spec}"
+        )
 
     print("\nSelf-test complete.")
 
@@ -352,11 +273,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="RTL-SDR Blog V4 frame source")
-    parser.add_argument(
-        "--test",
-        action="store_true",
-        help="Run hardware self-test: scan all bands once and print RSSI",
-    )
+    parser.add_argument("--test", action="store_true", help="Run hardware self-test")
     args = parser.parse_args()
 
     if args.test:
