@@ -24,36 +24,10 @@ const C = {
 };
 
 // ─── SIGNAL DEFINITIONS ──────────────────────────────────────────
+// Keys match the CNN class labels exactly (10-class v3 model)
 const SIGNAL_DEFS = {
-  Key_Signal: {
-    label: "KEY FOB / REMOTE",
-    shortLabel: "Key Fob",
-    color: C.red,
-    rgb: "255,51,85",
-    category: "ALERT",
-    freq: "433.920 MHz",
-    freqNum: 433.92,
-  },
-  Walkie_Talkie: {
-    label: "WALKIE-TALKIE",
-    shortLabel: "Walkie-Talkie",
-    color: C.amber,
-    rgb: "255,187,0",
-    category: "COMMS",
-    freq: "162.000 MHz",
-    freqNum: 162.0,
-  },
-  LTE: {
-    label: "LTE CELLULAR",
-    shortLabel: "LTE",
-    color: C.purple,
-    rgb: "183,157,252",
-    category: "COMMS",
-    freq: "2100.000 MHz",
-    freqNum: 2100.0,
-  },
-  ADS_B: {
-    label: "ADS-B TRANSPONDER",
+  aircraft_tracking: {
+    label: "ADS-B AIRCRAFT",
     shortLabel: "ADS-B",
     color: C.cyan,
     rgb: "0,212,255",
@@ -61,53 +35,155 @@ const SIGNAL_DEFS = {
     freq: "1090.000 MHz",
     freqNum: 1090.0,
   },
-  DJI_Drone: {
-    label: "DJI DRONE / OCUSYNC",
-    shortLabel: "DJI Drone",
+  air_traffic: {
+    label: "AIR TRAFFIC CONTROL",
+    shortLabel: "ATC",
+    color: "#00bbff",
+    rgb: "0,187,255",
+    category: "AIRSPACE",
+    freq: "122.000 MHz",
+    freqNum: 122.0,
+  },
+  cellular_network: {
+    label: "LTE / 5G CELLULAR",
+    shortLabel: "Cellular",
+    color: C.purple,
+    rgb: "183,157,252",
+    category: "COMMS",
+    freq: "900.000 MHz",
+    freqNum: 900.0,
+  },
+  local_repeaters: {
+    label: "AMATEUR RADIO 2m",
+    shortLabel: "Ham Radio",
+    color: "#88cc88",
+    rgb: "136,204,136",
+    category: "COMMS",
+    freq: "146.000 MHz",
+    freqNum: 146.0,
+  },
+  maritime: {
+    label: "MARITIME VHF",
+    shortLabel: "Maritime",
+    color: "#00aadd",
+    rgb: "0,170,221",
+    category: "COMMS",
+    freq: "156.800 MHz",
+    freqNum: 156.8,
+  },
+  noaa: {
+    label: "NOAA WEATHER SAT",
+    shortLabel: "NOAA",
+    color: "#66ddff",
+    rgb: "102,221,255",
+    category: "AIRSPACE",
+    freq: "137.500 MHz",
+    freqNum: 137.5,
+  },
+  radio_fm: {
+    label: "FM BROADCAST",
+    shortLabel: "FM Radio",
+    color: C.textDim,
+    rgb: "122,170,207",
+    category: "COMMS",
+    freq: "98.000 MHz",
+    freqNum: 98.0,
+  },
+  short_range_devices: {
+    label: "KEY FOB / REMOTE",
+    shortLabel: "Short Range",
+    color: C.red,
+    rgb: "255,51,85",
+    category: "ALERT",
+    freq: "315.000 MHz",
+    freqNum: 315.0,
+  },
+  walkie_talkie: {
+    label: "WALKIE-TALKIE UHF",
+    shortLabel: "Walkie-Talkie",
+    color: C.amber,
+    rgb: "255,187,0",
+    category: "ALERT",
+    freq: "446.000 MHz",
+    freqNum: 446.0,
+  },
+  wireless_controllers: {
+    label: "RC / IOT CONTROLLER",
+    shortLabel: "RC/IoT",
     color: C.elevated,
     rgb: "249,115,22",
     category: "ALERT",
-    freq: "2400.000 MHz",
-    freqNum: 2400.0,
+    freq: "433.920 MHz",
+    freqNum: 433.92,
   },
 };
 
 // ─── BIE SENTENCES ───────────────────────────────────────────────
+// Covers the three ALERT classes in full; background classes use fallback.
 const SENTENCES = {
-  Key_Signal: {
-    APPEARED:         "A key fob OOK carrier at 433 MHz has appeared in this area — source and intent unknown.",
-    APPROACHING_SLOW: "A remote control device is moving closer — recommend visual sweep of perimeter.",
-    APPROACHING_FAST: "The device is moving toward this location at speed. Possible remote detonator or vehicle entry device.",
-    STATIONARY:       "A key fob signal is active and stable. The remote device appears to be stationary nearby.",
-    DEPARTING_SLOW:   "The device is moving away from this location. Continue monitoring until signal is lost.",
-    DEPARTING_FAST:   "The key fob signal has dropped sharply. The device is departing this area quickly.",
-    DISAPPEARED:      "The key fob signal has been lost. The device has moved out of range or been deactivated.",
+  short_range_devices: {
+    APPEARED:         "A short-range RF device has been detected nearby — key fob, gate remote, or similar transmitter.",
+    APPROACHING_SLOW: "Short-range device signal is gradually getting stronger — a person is moving toward this location.",
+    APPROACHING_FAST: "Short-range device approaching rapidly — someone carrying a key fob or remote is closing distance fast.",
+    STATIONARY:       "Short-range device signal is stable. A key fob or remote is transmitting at a fixed location nearby.",
+    DEPARTING_SLOW:   "Short-range device signal is weakening — the person or device is moving away.",
+    DEPARTING_FAST:   "Short-range device signal has dropped sharply — the device is departing this area quickly.",
+    ERRATIC:          "Short-range device signal is erratic — the device may be in motion or repeatedly activated.",
+    DISAPPEARED:      "Short-range device signal lost — the device is no longer in range.",
   },
-  Walkie_Talkie: {
-    STATIONARY: "Narrowband FM signal active at 162 MHz. Likely personnel radio in the area.",
-    APPEARED:   "A walkie-talkie transmission has been detected at 162 MHz — possible personnel nearby.",
+  walkie_talkie: {
+    APPEARED:         "A walkie-talkie transmission detected on UHF — someone in the area is using a two-way radio.",
+    APPROACHING_SLOW: "Walkie-talkie signal gradually strengthening — a radio operator is moving toward this location.",
+    APPROACHING_FAST: "Walkie-talkie signal approaching rapidly — radio operator closing distance at speed.",
+    STATIONARY:       "Walkie-talkie signal active and stable — a person with a two-way radio is nearby.",
+    DEPARTING_SLOW:   "Walkie-talkie signal weakening — the radio operator is moving away.",
+    DEPARTING_FAST:   "Walkie-talkie signal has dropped sharply — the operator is departing quickly.",
+    ERRATIC:          "Walkie-talkie signal fluctuating — operator may be moving between locations.",
+    DISAPPEARED:      "Walkie-talkie signal lost — radio no longer transmitting or out of range.",
   },
-  LTE: {
-    STATIONARY: "Normal LTE cellular activity. Signal is stable — no anomalies detected.",
+  wireless_controllers: {
+    APPEARED:         "Wireless controller signal detected at 433 MHz — RC transmitter, drone controller, or IoT device active.",
+    APPROACHING_SLOW: "Wireless controller signal gradually strengthening — RC operator or drone moving toward this location.",
+    APPROACHING_FAST: "Wireless controller approaching rapidly — RC operator closing distance at speed.",
+    STATIONARY:       "Wireless controller signal stable — RC transmitter or IoT device operating at a fixed position.",
+    DEPARTING_SLOW:   "Wireless controller signal weakening — RC operator moving away.",
+    DEPARTING_FAST:   "Wireless controller signal dropped sharply — RC operator departed quickly.",
+    ERRATIC:          "Wireless controller signal erratic — RC device may be maneuvering or at range limits.",
+    DISAPPEARED:      "Wireless controller signal lost — transmitter no longer active or in range.",
   },
-  ADS_B: {
-    APPEARED:  "ADS-B Mode-S transponder detected at 1090 MHz — aircraft entering local airspace.",
-    OVERHEAD:  "Aircraft transponder overhead. Squawk code confirmed — monitoring altitude and track.",
-    DEPARTED:  "ADS-B signal fading — aircraft departing Tainan airspace.",
+  aircraft_tracking: {
+    APPEARED:    "ADS-B transponder detected — aircraft within range overhead at 1090 MHz.",
+    STATIONARY:  "ADS-B signal stable — aircraft circling or holding position overhead.",
+    DISAPPEARED: "ADS-B signal lost — aircraft has passed out of transponder range.",
   },
-  DJI_Drone: {
-    APPEARED:         "DJI OcuSync carrier detected at 2.4 GHz — possible unmanned aerial system in vicinity.",
-    APPROACHING_SLOW: "Drone control link strengthening — UAS is closing distance to this location.",
-    APPROACHING_FAST: "Drone signal approaching rapidly — unauthorized UAS. Initiate visual search now.",
-    STATIONARY:       "Drone is hovering at close range. OcuSync link stable — operator likely within 500m.",
-    DEPARTING_SLOW:   "Drone signal weakening — UAS departing the monitored area.",
-    DEPARTING_FAST:   "OcuSync link dropping sharply — drone exiting range at speed.",
-    DISAPPEARED:      "DJI drone signal lost — UAS out of range or powered down. Area clear.",
+  air_traffic: {
+    APPEARED:   "ATC VHF communications detected — aircraft or control tower transmitting nearby.",
+    STATIONARY: "Steady air traffic control communications — ongoing aircraft-tower exchange.",
+  },
+  cellular_network: {
+    STATIONARY: "Normal LTE/5G cellular activity — stable background signal from tower or device.",
+    APPEARED:   "Cellular network signal detected — normal LTE or 5G activity from a nearby tower.",
+  },
+  local_repeaters: {
+    APPEARED:   "Amateur radio signal on 2m band — licensed ham radio operator or repeater active nearby.",
+    STATIONARY: "Steady amateur radio transmission — operator active at a fixed location.",
+  },
+  maritime: {
+    APPEARED:   "Maritime VHF radio detected — vessel or shore station communicating.",
+    STATIONARY: "Steady maritime VHF transmission — vessel or shore station at stable position.",
+  },
+  noaa: {
+    APPEARED:   "NOAA weather satellite signal detected at 137 MHz — meteorological satellite overhead.",
+    STATIONARY: "NOAA satellite signal at peak — satellite near zenith in current orbital pass.",
+  },
+  radio_fm: {
+    STATIONARY: "Stable FM broadcast signal — normal commercial radio transmission from a fixed tower.",
+    APPEARED:   "FM broadcast station detected — commercial radio in the 88–108 MHz band is present.",
   },
 };
 
 function getSentence(cls, state) {
-  return SENTENCES[cls]?.[state] || SENTENCES[cls]?.STATIONARY || "Signal detected. Monitoring.";
+  return SENTENCES[cls]?.[state] || SENTENCES[cls]?.STATIONARY || `${cls} signal detected. Monitoring.`;
 }
 
 // ─── SCENARIO PHASES ─────────────────────────────────────────────
@@ -406,7 +482,9 @@ function SignalCard({ signal }) {
     }}>
       {/* Header */}
       <div style={{ color: headerColor, fontWeight: 700, fontSize: 15, marginBottom: 6 }}>
-        {isAlert ? "🔴 ALERT" : def.category === "AIRSPACE" ? "✈ AIRSPACE" : "🔵 COMMS"} — {def.label}
+        {def.category === "ALERT" ? "● ALERT"
+          : def.category === "AIRSPACE" ? "▲ AIRSPACE"
+          : "○ COMMS"} — {def.label}
       </div>
 
       {/* Sentence */}
@@ -540,6 +618,7 @@ export default function SpectrumEyeDashboard() {
   // WebSocket live mode
   const [wsLive, setWsLive] = useState(false);
   const wsLiveRef = useRef(false);
+  const [liveThreat, setLiveThreat] = useState(null); // null = use JS-derived
 
   // Signals passed to radar (via ref — no re-render needed)
   const signalsRef = useRef([]);
@@ -558,27 +637,28 @@ export default function SpectrumEyeDashboard() {
     keyState:     "APPEARED",
     keyActiveFor: 0,
     prevKeyRssi:  -82,
-    lteRssi:      -72,
-    wkRssi:       -81,
-    lteActiveFor: 0,
-    wkActiveFor:  0,
-    // ADS-B — periodic aircraft flyover
+    // background always-on signals
+    cellRssi:     -72,   // cellular_network
+    fmRssi:       -81,   // radio_fm
+    cellActiveFor: 0,
+    fmActiveFor:  0,
+    // aircraft_tracking — periodic flyover
     adsbActive:    false,
     adsbPhaseIdx:  0,
     adsbPhaseTimer: 0,
     adsbRssi:      -88,
     adsbBearing:   310,
     adsbActiveFor: 0,
-    adsbCooldown:  22,  // ticks before first aircraft
+    adsbCooldown:  22,
     prevAdsbRssi:  -88,
-    // DJI Drone — periodic ALERT
+    // wireless_controllers — periodic RC/drone ALERT
     djiActive:     false,
     djiPhaseIdx:   0,
     djiPhaseTimer: 0,
     djiRssi:       -85,
     djiBearing:    80,
     djiActiveFor:  0,
-    djiCooldown:   45,  // ticks before first drone
+    djiCooldown:   45,
     djiState:      "APPEARED",
     prevDjiRssi:   -85,
   });
@@ -624,6 +704,7 @@ export default function SpectrumEyeDashboard() {
 
         signalsRef.current = mapped;
         setCardSignals(mapped);
+        if (data.threat_level) setLiveThreat(data.threat_level);
 
         // Incoming alert from pipeline
         if (data.alert) {
@@ -647,6 +728,7 @@ export default function SpectrumEyeDashboard() {
         }
         wsLiveRef.current = false;
         setWsLive(false);
+        setLiveThreat(null);
         // Auto-reconnect after 3s
         retryTimer = setTimeout(connect, 3000);
       };
@@ -667,12 +749,12 @@ export default function SpectrumEyeDashboard() {
 
       const s = simRef.current;
       s.tick++;
-      s.lteActiveFor++;
-      s.wkActiveFor++;
+      s.cellActiveFor++;
+      s.fmActiveFor++;
 
-      // Base signals drift
-      s.lteRssi = Math.round(-72 + (Math.random() - 0.5) * 4);
-      s.wkRssi  = Math.round(-81 + (Math.random() - 0.5) * 4);
+      // Base background signals drift
+      s.cellRssi = Math.round(-72 + (Math.random() - 0.5) * 4);
+      s.fmRssi   = Math.round(-81 + (Math.random() - 0.5) * 4);
 
       // ── ADS-B: periodic aircraft flyover ──────────────────────────
       if (s.adsbActive) {
@@ -710,7 +792,7 @@ export default function SpectrumEyeDashboard() {
           s.adsbBearing   = Math.floor(Math.random() * 360);
           s.adsbRssi      = -88;
           s.adsbActiveFor = 0;
-          pushAlert("MODERATE", "ADS-B transponder detected — aircraft entering Tainan airspace");
+          pushAlert("MODERATE", "ADS-B transponder detected — aircraft entering local airspace");
         }
       }
 
@@ -742,7 +824,7 @@ export default function SpectrumEyeDashboard() {
             DEPARTING_SLOW:   ["MODERATE",  "Drone departing — signal weakening"],
             DISAPPEARED:      ["CLEAR",     "DJI drone signal lost — airspace clear"],
           };
-          if (djiAlertMap[dpName]) pushAlert(...djiAlertMap[dpName]);
+          if (djiAlertMap[dpName]) pushAlert(...djiAlertMap[dpName]); // eslint-disable-line no-unused-expressions
         }
         if (s.djiPhaseTimer >= dpDur) {
           s.djiPhaseIdx++;
@@ -763,7 +845,7 @@ export default function SpectrumEyeDashboard() {
           s.djiRssi       = -85;
           s.djiActiveFor  = 0;
           s.djiState      = "APPEARED";
-          pushAlert("ELEVATED", "⚠ DJI OcuSync carrier detected at 2.4 GHz — drone in vicinity");
+          pushAlert("ELEVATED", "RC/IoT 433 MHz controller signal detected — possible drone or RC device");
         }
       }
 
@@ -779,7 +861,7 @@ export default function SpectrumEyeDashboard() {
           s.keyRssi    = KEY_RSSI_BY_PHASE[KEY_PHASES[0][0]];
           s.keyBearing = 45 + Math.floor(Math.random() * 60);
           s.keyActiveFor = 0;
-          pushAlert("ELEVATED", "Key fob signal detected — OOK carrier at 433 MHz");
+          pushAlert("ELEVATED", "Short-range device signal detected — key fob or remote at 315 MHz");
         }
         // Update base-only signals for radar
         updateRadarAndCards(s, false);
@@ -824,10 +906,10 @@ export default function SpectrumEyeDashboard() {
         // Phase transition alerts
         if (s.phaseTimer === 1) {
           const alertMap = {
-            APPROACHING_FAST: ["CRITICAL", "⚠ Key fob approaching rapidly — possible remote device"],
-            STATIONARY:       ["ELEVATED", "Key fob signal stable — device stationary nearby"],
-            DEPARTING_SLOW:   ["MODERATE", "Key fob signal weakening — source departing area"],
-            DISAPPEARED:      ["CLEAR",    "Key fob signal lost — area clear"],
+            APPROACHING_FAST: ["CRITICAL", "Short-range device approaching rapidly — possible remote device"],
+            STATIONARY:       ["ELEVATED", "Short-range device signal stable — device stationary nearby"],
+            DEPARTING_SLOW:   ["MODERATE", "Short-range device signal weakening — source departing area"],
+            DISAPPEARED:      ["CLEAR",    "Short-range device signal lost — area clear"],
           };
           if (alertMap[phaseName]) pushAlert(...alertMap[phaseName]);
         }
@@ -856,16 +938,16 @@ export default function SpectrumEyeDashboard() {
   function updateRadarAndCards(s, keyVisible) {
     const base = [
       {
-        id: "lte1", cls: "LTE", state: "STATIONARY",
-        rssi: s.lteRssi, conf: 0.96,
-        bearing: 210, trend: -1,
-        activeFor: s.lteActiveFor,
+        id: "cell1", cls: "cellular_network", state: "STATIONARY",
+        rssi: s.cellRssi, conf: 0.96,
+        bearing: 200, trend: -1,
+        activeFor: s.cellActiveFor,
       },
       {
-        id: "walkie1", cls: "Walkie_Talkie", state: "STATIONARY",
-        rssi: s.wkRssi, conf: 0.89,
-        bearing: 305, trend: 1,
-        activeFor: s.wkActiveFor,
+        id: "fm1", cls: "radio_fm", state: "STATIONARY",
+        rssi: s.fmRssi, conf: 0.89,
+        bearing: 180, trend: 0,
+        activeFor: s.fmActiveFor,
       },
     ];
 
@@ -873,7 +955,10 @@ export default function SpectrumEyeDashboard() {
 
     if (s.adsbActive) {
       extras.push({
-        id: "adsb1", cls: "ADS_B", state: ADSB_PHASES[s.adsbPhaseIdx]?.[0] || "OVERHEAD",
+        id: "adsb1", cls: "aircraft_tracking",
+        state: ADSB_PHASES[s.adsbPhaseIdx]?.[0] === "OVERHEAD" ? "STATIONARY"
+             : ADSB_PHASES[s.adsbPhaseIdx]?.[0] === "DEPARTED"  ? "DEPARTING_FAST"
+             : "APPEARED",
         rssi: s.adsbRssi, conf: 0.99,
         bearing: Math.round(s.adsbBearing),
         trend: s.adsbRssi - s.prevAdsbRssi,
@@ -883,7 +968,7 @@ export default function SpectrumEyeDashboard() {
 
     if (s.djiActive && s.djiState !== "DISAPPEARED") {
       extras.push({
-        id: "dji1", cls: "DJI_Drone", state: s.djiState,
+        id: "rc1", cls: "wireless_controllers", state: s.djiState,
         rssi: s.djiRssi, conf: 0.93,
         bearing: Math.round(s.djiBearing),
         trend: s.djiRssi - s.prevDjiRssi,
@@ -894,7 +979,7 @@ export default function SpectrumEyeDashboard() {
     if (keyVisible) {
       const keyTrend = s.keyRssi - s.prevKeyRssi;
       const keySig = {
-        id: "key1", cls: "Key_Signal", state: s.keyState,
+        id: "srd1", cls: "short_range_devices", state: s.keyState,
         rssi: s.keyRssi, conf: s.keyConf,
         bearing: Math.round(s.keyBearing), trend: keyTrend,
         activeFor: s.keyActiveFor,
@@ -907,17 +992,18 @@ export default function SpectrumEyeDashboard() {
     }
   }
 
-  // Derived threat — ALERT signals drive the level
-  const keyCard = cardSignals.find(s => s.cls === "Key_Signal");
-  const djiCard = cardSignals.find(s => s.cls === "DJI_Drone");
+  // Derived threat for JS sim mode — driven by ALERT category signals.
+  // In live mode the pipeline sends threat_level directly (handled in ws.onmessage).
+  const alertCards = cardSignals.filter(s => SIGNAL_DEFS[s.cls]?.category === "ALERT");
   const criticalStates = ["APPROACHING_FAST", "STATIONARY"];
   const elevatedStates = ["APPEARED", "APPROACHING_SLOW"];
-  const isCritical = criticalStates.includes(keyCard?.state) || criticalStates.includes(djiCard?.state);
-  const isElevated = elevatedStates.includes(keyCard?.state) || elevatedStates.includes(djiCard?.state);
-  const threatLevel = isCritical ? "CRITICAL"
+  const isCritical = alertCards.some(s => criticalStates.includes(s.state));
+  const isElevated = alertCards.some(s => elevatedStates.includes(s.state));
+  const simThreat = isCritical ? "CRITICAL"
     : isElevated ? "ELEVATED"
-    : (keyCard || djiCard) ? "MODERATE"
+    : alertCards.length > 0 ? "MODERATE"
     : "CLEAR";
+  const threatLevel = liveThreat || simThreat;
   const threatColors = { CRITICAL: C.red, ELEVATED: C.elevated, MODERATE: C.amber, CLEAR: C.clear };
   const threatColor  = threatColors[threatLevel];
 
@@ -1110,11 +1196,11 @@ export default function SpectrumEyeDashboard() {
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {[
-                ["Edge AI",  "Pi 5 · MobileNetV2",   "SIM"],
-                ["SDR",      "RTL-SDR Blog V4",       "SIM"],
-                ["Model",    "v2_colab · 3-class",    "LOADED"],
-                ["CNN",      "75.6ms · 100% acc.",    "OK"],
-                ["Cloud",    "AWS IoT Core",          "SIM"],
+                ["Edge AI",  "Pi 5 · MobileNetV2",     wsLive ? "LIVE" : "SIM"],
+                ["SDR",      "RTL-SDR Blog V4",         wsLive ? "LIVE" : "SIM"],
+                ["Model",    "v3_colab · 10-class",     "LOADED"],
+                ["CNN",      "97.45% · real RF data",   "OK"],
+                ["Cloud",    "AWS IoT Core",            "SIM"],
               ].map(([lbl, val, st]) => (
                 <div key={lbl} style={{
                   display: "flex", justifyContent: "space-between", alignItems: "center",
