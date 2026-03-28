@@ -409,16 +409,18 @@ class EdgePipeline:
             self._ws.start()
         log.info("EdgePipeline: running — Ctrl+C to stop")
 
+        gen = self._source.frames()
         try:
-            for frame in self._source.frames():
+            for frame in gen:
                 if not self._running:
                     break
                 self._process_frame(frame)
-        except StopIteration:
+        except (StopIteration, KeyboardInterrupt):
             pass
         except Exception as exc:
             log.exception("EdgePipeline: fatal error: %s", exc)
         finally:
+            gen.close()   # triggers sdr.close() via generator finally block
             self._shutdown()
 
     def _process_frame(self, frame: dict) -> None:
@@ -516,6 +518,8 @@ class EdgePipeline:
     def _handle_shutdown(self, signum, frame) -> None:
         log.info("EdgePipeline: shutdown signal received")
         self._running = False
+        # Restore default SIGINT so blocking C calls (sdr.read_samples) get interrupted
+        signal.signal(signal.SIGINT, signal.SIG_DFL)
 
     def _shutdown(self) -> None:
         log.info("EdgePipeline: shutting down...")
