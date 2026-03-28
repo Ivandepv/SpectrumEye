@@ -39,5 +39,6 @@ psutil>=6.0.0
 # Optional — AWS cloud pipeline (aws_publisher.py)
 # boto3>=1.35.0
 
-# RTL-SDR hardware — pyrtlsdr Python 3.12/3.13 compatible fork (no PyPI release)
-# pip install git+https://github.com/roger-/pyrtlsdr.git
+# RTL-SDR hardware — exact versions required (tested on Pi 5 / Debian Trixie / Python 3.13)
+setuptools==69.5.1
+pyrtlsdr==0.2.92
