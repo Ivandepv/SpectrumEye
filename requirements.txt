@@ -39,6 +39,5 @@ psutil>=6.0.0
 # Optional — AWS cloud pipeline (aws_publisher.py)
 # boto3>=1.35.0
 
-# RTL-SDR hardware — uses system `rtl_sdr` binary, no Python library needed.
-# Install system package:  sudo apt install rtl-sdr  (Debian/Pi)
-#                          sudo pacman -S rtl-sdr    (Arch)
+# RTL-SDR hardware — pyrtlsdr Python 3.12/3.13 compatible fork (no PyPI release)
+# pip install git+https://github.com/roger-/pyrtlsdr.git
