@@ -1,8 +1,9 @@
 """
 train.py
 
-Trains a MobileNetV2-based CNN to classify RF spectrograms into 3 signal classes:
-  Key_Signal | Walkie_Talkie | LTE
+Trains a MobileNetV2-based CNN to classify RF spectrograms into 10 signal classes:
+  aircraft_tracking | air_traffic | cellular_network | local_repeaters | maritime |
+  noaa | radio_fm | short_range_devices | walkie_talkie | wireless_controllers
 
 Architecture:
   Input (224, 224, 1) grayscale
@@ -12,7 +13,7 @@ Architecture:
     → GlobalAveragePooling2D
     → Dense(256, ReLU) → Dropout(0.3)
     → Dense(128, ReLU) → Dropout(0.2)
-    → Dense(3, softmax)
+    → Dense(10, softmax)
 
 Outputs (saved to ml/models/{version}/):
   best_model.keras          — best checkpoint by val_accuracy
@@ -60,7 +61,18 @@ from tensorflow.keras.callbacks import (
 
 # ─── CONFIGURATION ────────────────────────────────────────────────
 
-CLASS_LABELS = ["Key_Signal", "Walkie_Talkie", "LTE"]
+CLASS_LABELS = [
+    "aircraft_tracking",
+    "air_traffic",
+    "cellular_network",
+    "local_repeaters",
+    "maritime",
+    "noaa",
+    "radio_fm",
+    "short_range_devices",
+    "walkie_talkie",
+    "wireless_controllers",
+]
 N_CLASSES    = len(CLASS_LABELS)
 IMG_SIZE     = (224, 224)
 
@@ -217,7 +229,7 @@ def evaluate_and_save(model: Model, test_ds: tf.data.Dataset, out_dir: Path) -> 
     cm      = confusion_matrix(y_true, y_pred)
     cm_norm = cm.astype(float) / cm.sum(axis=1, keepdims=True)
 
-    fig, ax = plt.subplots(figsize=(8, 6))
+    fig, ax = plt.subplots(figsize=(14, 11))
     sns.heatmap(
         cm_norm,
         annot=True,

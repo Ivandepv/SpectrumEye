@@ -6,16 +6,20 @@ Physics-based IQ spectrogram generator for SpectrumEye dataset.
 Signal chain (same as real RTL-SDR hardware):
   IQ samples → AWGN noise (IQ level) → STFT → normalize → 224×224 PNG
 
-Three classes:
+Five classes:
   Key_Signal     — OOK-keyed carrier (key fob / remote)
   Walkie_Talkie  — FM-modulated carrier (narrowband voice radio)
   LTE            — OFDM wideband signal (4G cellular)
+  ADS_B          — Mode S transponder pulsed burst (1090 MHz)
+  DJI_Drone      — OcuSync frequency-hopping OFDM (2.4 GHz)
 
 Output folder structure (matches ml/dataset/raw/ directly):
   dataset_rf/
   ├── Key_Signal/      key_{n:04d}.png
   ├── Walkie_Talkie/   walkie_{n:04d}.png
-  └── LTE/             lte_{n:04d}.png
+  ├── LTE/             lte_{n:04d}.png
+  ├── ADS_B/           adsb_{n:04d}.png
+  └── DJI_Drone/       dji_{n:04d}.png
 
 After running this script on Colab:
   1. Download dataset_rf/
@@ -147,6 +151,71 @@ def lte_simulation(t, fs):
     return signal
 
 
+def adsb_simulation(t, fs):
+    """
+    ADS-B Mode S transponder — 1090 MHz pulsed burst transmitter.
+
+    Real ADS-B squitters at ~6.2 Hz (every ~0.16 s), each burst is
+    a 120 μs framed pulse sequence. In normalized baseband: narrow
+    carrier at 100 Hz that activates in short, evenly-spaced windows.
+
+    In the spectrogram: narrow bright vertical bars at 100 Hz,
+    regular timing — easily distinguishable from Key_Signal (random
+    burst pattern) and all other signals.
+    """
+    f_carrier    = 100                   # normalized center frequency
+    burst_period = int(0.16 * fs)        # ~160 samples: squitter every 0.16 s
+    burst_len    = int(0.018 * fs)       # ~18 samples: 120 μs frame (scaled)
+
+    wave     = np.exp(1j * 2 * np.pi * f_carrier * t)
+    envelope = np.zeros(len(t))
+
+    for start in range(0, len(t), burst_period):
+        end = min(start + burst_len, len(t))
+        envelope[start:end] = 1.0
+
+    return wave * envelope
+
+
+def dji_drone_simulation(t, fs):
+    """
+    DJI OcuSync — frequency-hopping spread-spectrum OFDM (2.4 GHz).
+
+    Real OcuSync uses ~10 MHz bandwidth and hops between sub-bands
+    every few milliseconds. In normalized baseband: 20-subcarrier OFDM
+    per hop, rotating through three frequency bands every 200 ms.
+
+    In the spectrogram: wide-band block that shifts between bands over
+    time — distinct from LTE (fixed center) and all other signals.
+    """
+    hop_interval = int(0.20 * fs)        # 200 samples per hop
+    band_centers = [fs * 0.15, fs * 0.30, fs * 0.45]   # 150 / 300 / 450 Hz
+    n_subcarriers = 20
+    bandwidth     = fs * 0.08            # 80 Hz per band
+
+    signal    = np.zeros(len(t), dtype=complex)
+    hop_order = np.random.permutation(3)
+    n_hops    = int(np.ceil(len(t) / hop_interval))
+
+    for h in range(n_hops):
+        start = h * hop_interval
+        end   = min(start + hop_interval, len(t))
+        t_seg = t[start:end]
+
+        f_center = band_centers[hop_order[h % 3]]
+        df       = bandwidth / n_subcarriers
+        seg      = np.zeros(len(t_seg), dtype=complex)
+
+        for k in range(n_subcarriers):
+            f_k = f_center + (k - n_subcarriers // 2) * df
+            phi = np.random.uniform(0, 2 * np.pi)
+            seg += np.exp(1j * (2 * np.pi * f_k * t_seg + phi))
+
+        signal[start:end] = seg / np.sqrt(n_subcarriers)
+
+    return signal
+
+
 def awgn(signal, noise_level=0.5):
     """
     Additive White Gaussian Noise — applied at IQ level (before FFT).
@@ -216,18 +285,22 @@ def spectrogram_to_image(iq_signal, fs, nfft=NFFT):
 
 def generate_dataset(n_per_class=N_IMAGES_PER_CLASS, fs=FS, duration=DURATION):
     """
-    Generate N_IMAGES_PER_CLASS spectrograms for each of the three classes.
+    Generate N_IMAGES_PER_CLASS spectrograms for each of the five classes.
 
     Output structure:
       dataset_rf/Key_Signal/    key_{n:04d}.png
       dataset_rf/Walkie_Talkie/ walkie_{n:04d}.png
       dataset_rf/LTE/           lte_{n:04d}.png
+      dataset_rf/ADS_B/         adsb_{n:04d}.png
+      dataset_rf/DJI_Drone/     dji_{n:04d}.png
     """
     base_dir  = "dataset_rf"
     class_dirs = {
-        "Key_Signal":   os.path.join(base_dir, "Key_Signal"),
-        "Walkie_Talkie":os.path.join(base_dir, "Walkie_Talkie"),
-        "LTE":          os.path.join(base_dir, "LTE"),
+        "Key_Signal":    os.path.join(base_dir, "Key_Signal"),
+        "Walkie_Talkie": os.path.join(base_dir, "Walkie_Talkie"),
+        "LTE":           os.path.join(base_dir, "LTE"),
+        "ADS_B":         os.path.join(base_dir, "ADS_B"),
+        "DJI_Drone":     os.path.join(base_dir, "DJI_Drone"),
     }
 
     for path in class_dirs.values():
@@ -237,11 +310,13 @@ def generate_dataset(n_per_class=N_IMAGES_PER_CLASS, fs=FS, duration=DURATION):
         "Key_Signal":    (key_signal_simulation,    "key"),
         "Walkie_Talkie": (walkie_talkie_simulation,  "walkie"),
         "LTE":           (lte_simulation,            "lte"),
+        "ADS_B":         (adsb_simulation,           "adsb"),
+        "DJI_Drone":     (dji_drone_simulation,      "dji"),
     }
 
     t = generate_t_sampling(fs, duration)
 
-    print(f"Generating {n_per_class} images × 3 classes = {n_per_class * 3} total\n")
+    print(f"Generating {n_per_class} images × 5 classes = {n_per_class * 5} total\n")
 
     for class_name, (sim_fn, prefix) in signal_fns.items():
         out_dir = class_dirs[class_name]
@@ -263,7 +338,7 @@ def generate_dataset(n_per_class=N_IMAGES_PER_CLASS, fs=FS, duration=DURATION):
     print("  1. Copy dataset_rf/ contents into ml/dataset/raw/")
     print("  2. python ml/augment.py")
     print("  3. python ml/split_dataset.py")
-    print("  4. python ml/train.py")
+    print("  4. python ml/train.py  (now trains 5 classes)")
 
 
 # ─── ENTRY POINT ──────────────────────────────────────────────────

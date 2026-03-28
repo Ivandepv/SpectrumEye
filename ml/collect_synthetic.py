@@ -2,11 +2,13 @@
 collect_synthetic.py
 
 Generates synthetic 224x224 grayscale spectrograms for CNN training.
-Three signal classes (Phase 2 initial scope):
+Five signal classes:
 
   Key_Signal    — key fob / remote control (OOK, very narrow, bursty)
   Walkie_Talkie — narrowband FM radio (NFM, narrow, continuous PTT)
   LTE           — 4G cellular downlink (OFDM, wide flat block, always on)
+  ADS_B         — Mode S transponder (1090 MHz, regular pulsed bursts)
+  DJI_Drone     — OcuSync OFDM (2.4 GHz, frequency-hopping wide band)
 
 Spectrogram orientation (matches interface contract):
   axis 0 (rows) = frequency  — row 0 = lowest frequency bin
@@ -46,7 +48,7 @@ HZ_PER_PX = (SAMPLE_RATE / NFFT) * (NFFT / IMG_H)   # ~9143 Hz/px
 # Per time column: 512 samples / 2.048e6 sps ≈ 0.25 ms
 MS_PER_COL = (HOP / SAMPLE_RATE) * 1000               # ~0.25 ms/col
 
-CLASS_LABELS = ["Key_Signal", "Walkie_Talkie", "LTE"]
+CLASS_LABELS = ["Key_Signal", "Walkie_Talkie", "LTE", "ADS_B", "DJI_Drone"]
 
 DATASET_DIR = Path(__file__).parent / "dataset" / "raw"
 
@@ -249,12 +251,107 @@ def _gen_lte() -> tuple:
     }
 
 
+def _gen_adsb() -> tuple:
+    """
+    ADS-B Mode S transponder (1090 MHz OOK pulsed burst).
+
+    Visual signature in spectrogram:
+    - Very narrow: 1-2 frequency pixels
+    - Regular periodic bursts (clock-like, every 25-35 columns)
+    - Each burst: 3-6 columns wide (Mode S frame)
+    - Distinct from Key_Signal: regular cadence vs random rolling code
+    Typical frequency: 1090 MHz (Mode S fixed standard)
+    """
+    noise_lvl = random.uniform(0.03, 0.07)
+    img = _noise_floor(noise_lvl)
+
+    center    = random.randint(20, IMG_H - 20)
+    width_px  = random.randint(1, 2)
+    snr_db    = random.uniform(12, 35)
+    amplitude = min(0.90, 0.35 + snr_db / 60.0)
+
+    burst_period = random.randint(25, 35)   # regular squitter timing
+    burst_len    = random.randint(3, 6)     # Mode S frame width
+    t_start      = random.randint(5, burst_period)
+
+    for t in range(t_start, IMG_W, burst_period):
+        t_end = min(t + burst_len, IMG_W)
+        beam  = _gaussian_column(center, width_px, amplitude)
+        for col in range(t, t_end):
+            noise = np.random.normal(0, 0.016, IMG_H).astype(np.float32)
+            img[:, col] = np.clip(img[:, col] + beam + noise, 0, 1)
+
+    return _to_uint8(img), {
+        "center_freq_hz":  int(1090e6),
+        "sample_rate_hz":  int(SAMPLE_RATE),
+        "snr_estimate_db": round(snr_db, 1),
+        "nfft": NFFT, "overlap": 0.5, "window": "hanning",
+        "p_min_dbfs": -100, "p_max_dbfs": 0,
+        "notes": "ADS-B Mode S transponder — 1090 MHz squitter bursts",
+    }
+
+
+def _gen_dji_drone() -> tuple:
+    """
+    DJI OcuSync frequency-hopping OFDM (2.4 GHz).
+
+    Visual signature in spectrogram:
+    - Wide flat block (40-70 frequency pixels) per hop
+    - 2-3 frequency sub-bands; hops every 50-70 columns
+    - Continuous in time (drone link always active when in flight)
+    - Distinct from LTE: changes center frequency across time hops
+    Typical frequency: 2400 MHz (2.4 GHz ISM band)
+    """
+    noise_lvl = random.uniform(0.02, 0.06)
+    img = _noise_floor(noise_lvl)
+
+    snr_db    = random.uniform(10, 30)
+    amplitude = min(0.85, 0.40 + snr_db / 80.0)
+
+    bw_px   = random.randint(40, 70)
+    n_bands = random.randint(2, 3)
+    band_centers = sorted(random.sample(
+        range(bw_px // 2 + 10, IMG_H - bw_px // 2 - 10), n_bands
+    ))
+
+    hop_len  = random.randint(50, 70)
+    tx_start = random.randint(0, 15)
+    guard_px = max(2, bw_px // 12)
+
+    band_idx = 0
+    for col_start in range(tx_start, IMG_W, hop_len):
+        col_end = min(col_start + hop_len, IMG_W)
+        center  = band_centers[band_idx % n_bands]
+        lo      = max(0, center - bw_px // 2)
+        hi      = min(IMG_H, lo + bw_px)
+
+        for col in range(col_start, col_end):
+            col_sig = _flat_column(lo, hi, amplitude, texture_std=0.020)
+            col_sig[lo : lo + guard_px] *= 0.50
+            col_sig[hi - guard_px : hi] *= 0.50
+            noise = np.random.normal(0, 0.016, IMG_H).astype(np.float32)
+            img[:, col] = np.clip(img[:, col] + col_sig + noise, 0, 1)
+
+        band_idx += 1
+
+    return _to_uint8(img), {
+        "center_freq_hz":  int(2400e6 + random.uniform(-20e6, 20e6)),
+        "sample_rate_hz":  int(SAMPLE_RATE),
+        "snr_estimate_db": round(snr_db, 1),
+        "nfft": NFFT, "overlap": 0.5, "window": "hanning",
+        "p_min_dbfs": -100, "p_max_dbfs": 0,
+        "notes": "DJI OcuSync OFDM — 2.4 GHz frequency-hopping drone link",
+    }
+
+
 # ─── REGISTRY & ENTRY POINT ───────────────────────────────────────
 
 GENERATORS = {
     "Key_Signal":    _gen_key_signal,
     "Walkie_Talkie": _gen_walkie_talkie,
     "LTE":           _gen_lte,
+    "ADS_B":         _gen_adsb,
+    "DJI_Drone":     _gen_dji_drone,
 }
 
 

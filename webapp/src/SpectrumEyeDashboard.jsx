@@ -29,6 +29,7 @@ const SIGNAL_DEFS = {
     label: "KEY FOB / REMOTE",
     shortLabel: "Key Fob",
     color: C.red,
+    rgb: "255,51,85",
     category: "ALERT",
     freq: "433.920 MHz",
     freqNum: 433.92,
@@ -37,6 +38,7 @@ const SIGNAL_DEFS = {
     label: "WALKIE-TALKIE",
     shortLabel: "Walkie-Talkie",
     color: C.amber,
+    rgb: "255,187,0",
     category: "COMMS",
     freq: "162.000 MHz",
     freqNum: 162.0,
@@ -45,9 +47,28 @@ const SIGNAL_DEFS = {
     label: "LTE CELLULAR",
     shortLabel: "LTE",
     color: C.purple,
+    rgb: "183,157,252",
     category: "COMMS",
     freq: "2100.000 MHz",
     freqNum: 2100.0,
+  },
+  ADS_B: {
+    label: "ADS-B TRANSPONDER",
+    shortLabel: "ADS-B",
+    color: C.cyan,
+    rgb: "0,212,255",
+    category: "AIRSPACE",
+    freq: "1090.000 MHz",
+    freqNum: 1090.0,
+  },
+  DJI_Drone: {
+    label: "DJI DRONE / OCUSYNC",
+    shortLabel: "DJI Drone",
+    color: C.elevated,
+    rgb: "249,115,22",
+    category: "ALERT",
+    freq: "2400.000 MHz",
+    freqNum: 2400.0,
   },
 };
 
@@ -68,6 +89,20 @@ const SENTENCES = {
   },
   LTE: {
     STATIONARY: "Normal LTE cellular activity. Signal is stable — no anomalies detected.",
+  },
+  ADS_B: {
+    APPEARED:  "ADS-B Mode-S transponder detected at 1090 MHz — aircraft entering local airspace.",
+    OVERHEAD:  "Aircraft transponder overhead. Squawk code confirmed — monitoring altitude and track.",
+    DEPARTED:  "ADS-B signal fading — aircraft departing Tainan airspace.",
+  },
+  DJI_Drone: {
+    APPEARED:         "DJI OcuSync carrier detected at 2.4 GHz — possible unmanned aerial system in vicinity.",
+    APPROACHING_SLOW: "Drone control link strengthening — UAS is closing distance to this location.",
+    APPROACHING_FAST: "Drone signal approaching rapidly — unauthorized UAS. Initiate visual search now.",
+    STATIONARY:       "Drone is hovering at close range. OcuSync link stable — operator likely within 500m.",
+    DEPARTING_SLOW:   "Drone signal weakening — UAS departing the monitored area.",
+    DEPARTING_FAST:   "OcuSync link dropping sharply — drone exiting range at speed.",
+    DISAPPEARED:      "DJI drone signal lost — UAS out of range or powered down. Area clear.",
   },
 };
 
@@ -94,6 +129,36 @@ const KEY_RSSI_BY_PHASE = {
   DEPARTING_SLOW:   -55,
   DEPARTING_FAST:   -72,
   DISAPPEARED:      -98,
+};
+
+const DJI_PHASES = [
+  ["APPEARED",         4],
+  ["APPROACHING_SLOW", 6],
+  ["APPROACHING_FAST", 5],
+  ["STATIONARY",       9],
+  ["DEPARTING_SLOW",   5],
+  ["DEPARTING_FAST",   4],
+  ["DISAPPEARED",      3],
+];
+const DJI_RSSI_BY_PHASE = {
+  APPEARED:         -82,
+  APPROACHING_SLOW: -68,
+  APPROACHING_FAST: -52,
+  STATIONARY:       -44,
+  DEPARTING_SLOW:   -66,
+  DEPARTING_FAST:   -82,
+  DISAPPEARED:      -94,
+};
+
+const ADSB_PHASES = [
+  ["APPEARED", 4],
+  ["OVERHEAD", 10],
+  ["DEPARTED", 4],
+];
+const ADSB_RSSI_BY_PHASE = {
+  APPEARED: -85,
+  OVERHEAD: -62,
+  DEPARTED: -88,
 };
 
 // ─── RADAR CANVAS ─────────────────────────────────────────────────
@@ -231,11 +296,9 @@ function RadarCanvas({ signalsRef }) {
       const diff = ((sw - sigCanvasDeg) + 360) % 360;
       const bright = diff < 110 ? 1 - diff / 110 : 0.12;
 
-      // Color based on category
+      // Color based on signal definition
       const def = SIGNAL_DEFS[sig.cls] || {};
-      const baseColor = def.category === "ALERT" ? "255,51,85" :
-                        def.category === "COMMS" ? (sig.cls === "LTE" ? "167,139,250" : "255,170,0") :
-                        "0,255,65";
+      const baseColor = def.rgb || "0,255,65";
 
       // Glow
       const glowSize = 22 + bright * 18;
@@ -259,7 +322,7 @@ function RadarCanvas({ signalsRef }) {
 
       // Label when bright
       if (bright > 0.2) {
-        ctx.font = "bold 14px 'JetBrains Mono', monospace";
+        ctx.font = "bold 18px 'JetBrains Mono', monospace";
         ctx.fillStyle = `rgba(${baseColor},${0.5 + bright * 0.5})`;
         ctx.fillText(`${def.shortLabel || sig.cls}  ${sig.rssi}dBm`, bx + 12, by - 8);
       }
@@ -343,7 +406,7 @@ function SignalCard({ signal }) {
     }}>
       {/* Header */}
       <div style={{ color: headerColor, fontWeight: 700, fontSize: 15, marginBottom: 6 }}>
-        {isAlert ? "🔴 ALERT" : "🔵 COMMS"} — {def.label}
+        {isAlert ? "🔴 ALERT" : def.category === "AIRSPACE" ? "✈ AIRSPACE" : "🔵 COMMS"} — {def.label}
       </div>
 
       {/* Sentence */}
@@ -499,6 +562,25 @@ export default function SpectrumEyeDashboard() {
     wkRssi:       -81,
     lteActiveFor: 0,
     wkActiveFor:  0,
+    // ADS-B — periodic aircraft flyover
+    adsbActive:    false,
+    adsbPhaseIdx:  0,
+    adsbPhaseTimer: 0,
+    adsbRssi:      -88,
+    adsbBearing:   310,
+    adsbActiveFor: 0,
+    adsbCooldown:  22,  // ticks before first aircraft
+    prevAdsbRssi:  -88,
+    // DJI Drone — periodic ALERT
+    djiActive:     false,
+    djiPhaseIdx:   0,
+    djiPhaseTimer: 0,
+    djiRssi:       -85,
+    djiBearing:    80,
+    djiActiveFor:  0,
+    djiCooldown:   45,  // ticks before first drone
+    djiState:      "APPEARED",
+    prevDjiRssi:   -85,
   });
 
   function pushAlert(level, message) {
@@ -591,6 +673,99 @@ export default function SpectrumEyeDashboard() {
       // Base signals drift
       s.lteRssi = Math.round(-72 + (Math.random() - 0.5) * 4);
       s.wkRssi  = Math.round(-81 + (Math.random() - 0.5) * 4);
+
+      // ── ADS-B: periodic aircraft flyover ──────────────────────────
+      if (s.adsbActive) {
+        s.adsbPhaseTimer++;
+        s.adsbActiveFor++;
+        const [apName, apDur] = ADSB_PHASES[s.adsbPhaseIdx];
+        s.prevAdsbRssi = s.adsbRssi;
+        const apTarget = ADSB_RSSI_BY_PHASE[apName];
+        // Linear interpolation within phase
+        if (apName === "OVERHEAD") {
+          const prevTarget = ADSB_RSSI_BY_PHASE[ADSB_PHASES[Math.max(0, s.adsbPhaseIdx - 1)][0]];
+          s.adsbRssi = Math.round(prevTarget + (apTarget - prevTarget) * (s.adsbPhaseTimer / apDur) + (Math.random() - 0.5) * 2);
+        } else if (apName === "DEPARTED") {
+          s.adsbRssi = Math.round(ADSB_RSSI_BY_PHASE.OVERHEAD + (apTarget - ADSB_RSSI_BY_PHASE.OVERHEAD) * (s.adsbPhaseTimer / apDur) + (Math.random() - 0.5) * 2);
+        } else {
+          s.adsbRssi = Math.round(apTarget + (Math.random() - 0.5) * 2);
+        }
+        // Bearing drifts — aircraft moving
+        s.adsbBearing = (s.adsbBearing + 4 + (Math.random() - 0.5) * 1.5) % 360;
+        if (s.adsbPhaseTimer >= apDur) {
+          s.adsbPhaseIdx++;
+          s.adsbPhaseTimer = 0;
+          if (s.adsbPhaseIdx >= ADSB_PHASES.length) {
+            s.adsbActive   = false;
+            s.adsbPhaseIdx = 0;
+            s.adsbCooldown = 30 + Math.floor(Math.random() * 20);
+          }
+        }
+      } else {
+        s.adsbCooldown--;
+        if (s.adsbCooldown <= 0) {
+          s.adsbActive    = true;
+          s.adsbPhaseIdx  = 0;
+          s.adsbPhaseTimer = 0;
+          s.adsbBearing   = Math.floor(Math.random() * 360);
+          s.adsbRssi      = -88;
+          s.adsbActiveFor = 0;
+          pushAlert("MODERATE", "ADS-B transponder detected — aircraft entering Tainan airspace");
+        }
+      }
+
+      // ── DJI Drone: periodic ALERT ─────────────────────────────────
+      if (s.djiActive) {
+        s.djiPhaseTimer++;
+        s.djiActiveFor++;
+        const [dpName, dpDur] = DJI_PHASES[s.djiPhaseIdx];
+        s.prevDjiRssi = s.djiRssi;
+        const dpTarget = DJI_RSSI_BY_PHASE[dpName];
+        s.djiState = dpName;
+        if (dpName === "APPROACHING_SLOW" || dpName === "APPROACHING_FAST") {
+          const prevTarget = DJI_RSSI_BY_PHASE[DJI_PHASES[Math.max(0, s.djiPhaseIdx - 1)][0]];
+          s.djiRssi = Math.round(prevTarget + (dpTarget - prevTarget) * (s.djiPhaseTimer / dpDur) + (Math.random() - 0.5) * 2);
+        } else if (dpName === "DEPARTING_SLOW" || dpName === "DEPARTING_FAST") {
+          const prevTarget = DJI_RSSI_BY_PHASE[DJI_PHASES[s.djiPhaseIdx - 1][0]];
+          s.djiRssi = Math.round(prevTarget + (dpTarget - prevTarget) * (s.djiPhaseTimer / dpDur) + (Math.random() - 0.5) * 2);
+        } else {
+          s.djiRssi = Math.round(dpTarget + (Math.random() - 0.5) * 2);
+        }
+        if (dpName !== "STATIONARY") {
+          s.djiBearing = (s.djiBearing + (Math.random() - 0.5) * 5 + 360) % 360;
+        }
+        // Phase transition alerts
+        if (s.djiPhaseTimer === 1) {
+          const djiAlertMap = {
+            APPROACHING_FAST: ["ELEVATED",  "Drone signal strengthening — UAS closing on this location"],
+            STATIONARY:       ["CRITICAL",  "⚠ Drone hovering at close range — OcuSync link stable"],
+            DEPARTING_SLOW:   ["MODERATE",  "Drone departing — signal weakening"],
+            DISAPPEARED:      ["CLEAR",     "DJI drone signal lost — airspace clear"],
+          };
+          if (djiAlertMap[dpName]) pushAlert(...djiAlertMap[dpName]);
+        }
+        if (s.djiPhaseTimer >= dpDur) {
+          s.djiPhaseIdx++;
+          s.djiPhaseTimer = 0;
+          if (s.djiPhaseIdx >= DJI_PHASES.length) {
+            s.djiActive    = false;
+            s.djiPhaseIdx  = 0;
+            s.djiCooldown  = 55 + Math.floor(Math.random() * 30);
+          }
+        }
+      } else {
+        s.djiCooldown--;
+        if (s.djiCooldown <= 0) {
+          s.djiActive     = true;
+          s.djiPhaseIdx   = 0;
+          s.djiPhaseTimer = 0;
+          s.djiBearing    = Math.floor(Math.random() * 360);
+          s.djiRssi       = -85;
+          s.djiActiveFor  = 0;
+          s.djiState      = "APPEARED";
+          pushAlert("ELEVATED", "⚠ DJI OcuSync carrier detected at 2.4 GHz — drone in vicinity");
+        }
+      }
 
       // Waiting phase
       if (s.waiting) {
@@ -694,6 +869,28 @@ export default function SpectrumEyeDashboard() {
       },
     ];
 
+    const extras = [];
+
+    if (s.adsbActive) {
+      extras.push({
+        id: "adsb1", cls: "ADS_B", state: ADSB_PHASES[s.adsbPhaseIdx]?.[0] || "OVERHEAD",
+        rssi: s.adsbRssi, conf: 0.99,
+        bearing: Math.round(s.adsbBearing),
+        trend: s.adsbRssi - s.prevAdsbRssi,
+        activeFor: s.adsbActiveFor,
+      });
+    }
+
+    if (s.djiActive && s.djiState !== "DISAPPEARED") {
+      extras.push({
+        id: "dji1", cls: "DJI_Drone", state: s.djiState,
+        rssi: s.djiRssi, conf: 0.93,
+        bearing: Math.round(s.djiBearing),
+        trend: s.djiRssi - s.prevDjiRssi,
+        activeFor: s.djiActiveFor,
+      });
+    }
+
     if (keyVisible) {
       const keyTrend = s.keyRssi - s.prevKeyRssi;
       const keySig = {
@@ -702,21 +899,24 @@ export default function SpectrumEyeDashboard() {
         bearing: Math.round(s.keyBearing), trend: keyTrend,
         activeFor: s.keyActiveFor,
       };
-      signalsRef.current = [keySig, ...base];
-      setCardSignals([keySig, ...base]);
+      signalsRef.current = [keySig, ...extras, ...base];
+      setCardSignals([keySig, ...extras, ...base]);
     } else {
-      signalsRef.current = base;
-      setCardSignals(base);
+      signalsRef.current = [...extras, ...base];
+      setCardSignals([...extras, ...base]);
     }
   }
 
-  // Derived threat
+  // Derived threat — ALERT signals drive the level
   const keyCard = cardSignals.find(s => s.cls === "Key_Signal");
-  const threatLevel = keyCard
-    ? (keyCard.state === "APPROACHING_FAST" ? "CRITICAL"
-      : keyCard.state === "APPROACHING_SLOW" || keyCard.state === "APPEARED" ? "ELEVATED"
-      : keyCard.state === "STATIONARY" ? "ELEVATED"
-      : "MODERATE")
+  const djiCard = cardSignals.find(s => s.cls === "DJI_Drone");
+  const criticalStates = ["APPROACHING_FAST", "STATIONARY"];
+  const elevatedStates = ["APPEARED", "APPROACHING_SLOW"];
+  const isCritical = criticalStates.includes(keyCard?.state) || criticalStates.includes(djiCard?.state);
+  const isElevated = elevatedStates.includes(keyCard?.state) || elevatedStates.includes(djiCard?.state);
+  const threatLevel = isCritical ? "CRITICAL"
+    : isElevated ? "ELEVATED"
+    : (keyCard || djiCard) ? "MODERATE"
     : "CLEAR";
   const threatColors = { CRITICAL: C.red, ELEVATED: C.elevated, MODERATE: C.amber, CLEAR: C.clear };
   const threatColor  = threatColors[threatLevel];
@@ -826,8 +1026,8 @@ export default function SpectrumEyeDashboard() {
         {/* ── LEFT PANEL (55%) ──────────────────────────────────── */}
         <div style={{
           width: "55%", display: "flex", flexDirection: "column",
-          alignItems: "center", justifyContent: "center",
-          padding: "24px 20px",
+          alignItems: "center", justifyContent: "flex-start",
+          padding: "32px 20px 24px",
           borderRight: `1px solid ${C.border}`,
           gap: 16,
         }}>

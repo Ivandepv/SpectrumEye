@@ -30,7 +30,18 @@ from PIL import Image
 RAW_DIR = Path(__file__).parent / "dataset" / "raw"
 AUG_DIR = Path(__file__).parent / "dataset" / "augmented"
 
-CLASS_LABELS = ["Key_Signal", "Walkie_Talkie", "LTE"]
+CLASS_LABELS = [
+    "aircraft_tracking",
+    "air_traffic",
+    "cellular_network",
+    "local_repeaters",
+    "maritime",
+    "noaa",
+    "radio_fm",
+    "short_range_devices",
+    "walkie_talkie",
+    "wireless_controllers",
+]
 
 # ─── IMAGE I/O ────────────────────────────────────────────────────
 

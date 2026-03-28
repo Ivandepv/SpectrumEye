@@ -9,9 +9,11 @@ state, no overlap with the training data.
 
 Output:
   test_batch/
-  ├── Key_Signal/     test_key_0000.png  ...  test_key_0099.png
-  ├── Walkie_Talkie/  test_walkie_0000.png ... test_walkie_0099.png
-  └── LTE/            test_lte_0000.png  ...  test_lte_0099.png
+  ├── Key_Signal/     test_key_0000.png   ...  test_key_0099.png
+  ├── Walkie_Talkie/  test_walkie_0000.png ...  test_walkie_0099.png
+  ├── LTE/            test_lte_0000.png   ...  test_lte_0099.png
+  ├── ADS_B/          test_adsb_0000.png  ...  test_adsb_0099.png
+  └── DJI_Drone/      test_dji_0000.png   ...  test_dji_0099.png
 
 Usage:
   python ml/generate_test_batch.py
@@ -41,6 +43,8 @@ try:
         key_signal_simulation,
         walkie_talkie_simulation,
         lte_simulation,
+        adsb_simulation,
+        dji_drone_simulation,
         awgn,
         spectrogram_to_image,
     )
@@ -59,6 +63,8 @@ def generate(n_per_class: int = N_PER_CLASS, seed: int = SEED) -> None:
         "Key_Signal":    (key_signal_simulation,    "test_key"),
         "Walkie_Talkie": (walkie_talkie_simulation,  "test_walkie"),
         "LTE":           (lte_simulation,            "test_lte"),
+        "ADS_B":         (adsb_simulation,           "test_adsb"),
+        "DJI_Drone":     (dji_drone_simulation,      "test_dji"),
     }
 
     print(f"Generating test batch (seed={seed}, {n_per_class} images per class)\n")

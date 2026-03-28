@@ -1,25 +1,32 @@
 """
 ml/prepare_colab_zip.py
 
-Creates ml_training_v2.zip ready to upload to Google Colab.
+Creates ml_training_v3.zip ready to upload to Google Colab.
 
 Contents:
   ml/
-  ├── dataset/raw/Key_Signal/     (500 images from simulation)
-  ├── dataset/raw/Walkie_Talkie/  (500 images from simulation)
-  ├── dataset/raw/LTE/            (500 images from simulation)
+  ├── dataset/raw/aircraft_tracking/    (500 images)
+  ├── dataset/raw/air_traffic/          (500 images)
+  ├── dataset/raw/cellular_network/     (500 images)
+  ├── dataset/raw/local_repeaters/      (500 images)
+  ├── dataset/raw/maritime/             (500 images)
+  ├── dataset/raw/noaa/                 (500 images)
+  ├── dataset/raw/radio_fm/             (500 images)
+  ├── dataset/raw/short_range_devices/  (500 images)
+  ├── dataset/raw/walkie_talkie/        (500 images)
+  ├── dataset/raw/wireless_controllers/ (500 images)
   ├── augment.py
   ├── split_dataset.py
   └── train.py
 
 On Colab the notebook will run:
-  augment.py      →  1 500 raw  →  10 500 augmented
-  split_dataset.py →  10 500     →  train / val / test
+  augment.py       →  5 000 raw  →  35 000 augmented
+  split_dataset.py →  17 500     →  train / val / test
   train.py         →  CNN training (50 epochs, T4 GPU)
 
 Usage:
   python ml/prepare_colab_zip.py
-  # → creates ml_training_v2.zip in the project root
+  # → creates ml_training_v3.zip in the project root
 """
 
 import os
@@ -30,13 +37,24 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent
 ML_DIR       = PROJECT_ROOT / "ml"
 SIM_DATA_DIR = PROJECT_ROOT / "simulation" / "dataset_rf"
-OUTPUT_ZIP   = PROJECT_ROOT / "ml_training_v2.zip"
+OUTPUT_ZIP   = PROJECT_ROOT / "ml_training_v3.zip"
 
-CLASS_LABELS = ["Key_Signal", "Walkie_Talkie", "LTE"]
+CLASS_LABELS = [
+    "aircraft_tracking",
+    "air_traffic",
+    "cellular_network",
+    "local_repeaters",
+    "maritime",
+    "noaa",
+    "radio_fm",
+    "short_range_devices",
+    "walkie_talkie",
+    "wireless_controllers",
+]
 
 
 def build_zip() -> None:
-    print("Building ml_training_v2.zip...\n")
+    print("Building ml_training_v3.zip...\n")
 
     with zipfile.ZipFile(OUTPUT_ZIP, "w", compression=zipfile.ZIP_DEFLATED) as zf:
 
@@ -68,7 +86,7 @@ def build_zip() -> None:
 
     size_mb = OUTPUT_ZIP.stat().st_size / 1024 / 1024
     print(f"\nCreated: {OUTPUT_ZIP.name}  ({size_mb:.1f} MB)")
-    print("Upload this file to Google Colab.")
+    print("Upload this file to Google Colab (Cell 3 of SpectrumEye_Training.ipynb).")
 
 
 if __name__ == "__main__":

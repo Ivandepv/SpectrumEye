@@ -34,7 +34,7 @@ from PIL import Image
 
 # ─── CONFIG ───────────────────────────────────────────────────────
 
-CLASS_LABELS   = ["Key_Signal", "Walkie_Talkie", "LTE"]
+CLASS_LABELS   = ["Key_Signal", "Walkie_Talkie", "LTE", "ADS_B", "DJI_Drone"]
 IMG_SIZE       = (224, 224)
 CONF_THRESHOLD = 0.60   # below this → reported as "Unknown"
 
@@ -97,6 +97,7 @@ def run_quick(model) -> None:
         from simulation_final import (
             generate_t_sampling, key_signal_simulation,
             walkie_talkie_simulation, lte_simulation,
+            adsb_simulation, dji_drone_simulation,
             awgn, spectrogram_to_image,
         )
     except ImportError:
@@ -113,6 +114,8 @@ def run_quick(model) -> None:
         "Key_Signal":    key_signal_simulation,
         "Walkie_Talkie": walkie_talkie_simulation,
         "LTE":           lte_simulation,
+        "ADS_B":         adsb_simulation,
+        "DJI_Drone":     dji_drone_simulation,
     }
 
     print(f"Quick test — {N} fresh images per class (seed=999, not used in training)\n")
@@ -254,7 +257,7 @@ def main() -> None:
     )
     mode.add_argument(
         "--folder", metavar="PATH",
-        help="Evaluate on a labeled folder:\n  PATH/Key_Signal/*.png\n  PATH/Walkie_Talkie/*.png\n  PATH/LTE/*.png",
+        help="Evaluate on a labeled folder:\n  PATH/Key_Signal/*.png\n  PATH/Walkie_Talkie/*.png\n  PATH/LTE/*.png\n  PATH/ADS_B/*.png\n  PATH/DJI_Drone/*.png",
     )
     mode.add_argument(
         "--image", metavar="PATH",

@@ -29,7 +29,18 @@ TRAIN_DIR = Path(__file__).parent / "dataset" / "train"
 VAL_DIR   = Path(__file__).parent / "dataset" / "val"
 TEST_DIR  = Path(__file__).parent / "dataset" / "test"
 
-CLASS_LABELS = ["Key_Signal", "Walkie_Talkie", "LTE"]
+CLASS_LABELS = [
+    "aircraft_tracking",
+    "air_traffic",
+    "cellular_network",
+    "local_repeaters",
+    "maritime",
+    "noaa",
+    "radio_fm",
+    "short_range_devices",
+    "walkie_talkie",
+    "wireless_controllers",
+]
 
 SPLIT = {"train": 0.70, "val": 0.15, "test": 0.15}
 
