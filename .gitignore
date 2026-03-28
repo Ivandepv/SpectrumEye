@@ -19,7 +19,7 @@ ml_training*.zip
 
 # ── ML — Model binaries (large; use scripts to retrain) ──────────
 # Config files (*.json) ARE committed — only binaries are excluded.
-*.keras
+
 *.tflite
 *.h5
 *.pb
