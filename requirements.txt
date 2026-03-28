@@ -37,7 +37,9 @@ psutil==6.1.1
 setuptools>=70.0.0
 
 # RTL-SDR hardware (data_collector.py, playground.py)
-pyrtlsdr==0.3.0
+# PyPI 0.3.0 uses `imp` which was removed in Python 3.12 — install from GitHub:
+#   pip install git+https://github.com/roger-/pyrtlsdr.git
+# pyrtlsdr==0.3.0
 
 # Spectrogram plotting + image save (data_collector.py, playground.py)
 matplotlib==3.9.2
