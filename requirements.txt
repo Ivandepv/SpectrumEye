@@ -32,3 +32,9 @@ psutil==6.1.1
 
 # Optional — AWS cloud pipeline (aws_publisher.py)
 # boto3==1.35.0
+
+# RTL-SDR hardware (data_collector.py, playground.py)
+pyrtlsdr==0.3.0
+
+# Spectrogram plotting + image save (data_collector.py, playground.py)
+matplotlib==3.9.2

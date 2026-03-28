@@ -15,8 +15,11 @@ Modes:
             approaches, Walkie_Talkie appears and is CRITICAL, LTE stays).
             Pauses between phases so you can observe the dashboard.
 
-  --socket  Hardware mode: reads sweep_frames from a Unix domain socket
-            written by the partner DSP code. Default socket path:
+  --hardware  Real hardware mode: RTL-SDR Blog V4 sweeps 10 bands live.
+              No partner code needed — uses edge/rtlsdr_source.py directly.
+
+  --socket  Socket mode: reads sweep_frames from a Unix domain socket
+            written by partner DSP code. Default socket path:
             /tmp/spectromeye_frames.sock
 
   --display flask  Use Flask HTTP display instead of terminal.
@@ -36,7 +39,10 @@ Usage:
   python edge/main.py --sim
   python edge/main.py --demo
 
-  # Real hardware (DSP partner writes frames to socket):
+  # Real RTL-SDR hardware (no partner code needed):
+  python edge/main.py --hardware --display ws
+
+  # Legacy socket mode (DSP partner writes frames to socket):
   python edge/main.py --socket /tmp/spectromeye_frames.sock
 """
 
@@ -58,6 +64,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from edge.classifier       import SpectrumClassifier
 from edge.bie              import BIE
+from edge.rtlsdr_source    import RTLSDRFrameSource
 from edge.sensor_fusion    import SensorFusion
 from edge.aws_publisher    import AWSPublisher
 from edge.alert_controller import AlertController
@@ -80,10 +87,10 @@ DEFAULT_SOCKET = "/tmp/spectromeye_frames.sock"
 
 # Simulation parameters
 SIM_FRAME_INTERVAL = 0.5    # seconds between synthetic frames
-SIM_BANDS = [               # swept bands for simulation
-    {"band_id": "iot_433",  "center_freq_hz": 433_000_000,   "rssi_dbfs": -78.0},
-    {"band_id": "lte_band3","center_freq_hz": 1_800_000_000, "rssi_dbfs": -75.0},
-    {"band_id": "wifi_24",  "center_freq_hz": 2_437_000_000, "rssi_dbfs": -80.0},
+SIM_BANDS = [               # swept bands for simulation (real class names)
+    {"band_id": "walkie_talkie",     "center_freq_hz": 446_000_000, "rssi_dbfs": -78.0},
+    {"band_id": "cellular_network",  "center_freq_hz": 900_000_000, "rssi_dbfs": -75.0},
+    {"band_id": "short_range_devices","center_freq_hz":433_920_000, "rssi_dbfs": -80.0},
 ]
 
 # Status heartbeat every N frames
@@ -102,9 +109,11 @@ class SimulationFrameSource:
 
     # Class → typical center_freq_hz used in simulation
     _CLASS_FREQ = {
-        "Key_Signal":   433_000_000,
-        "Walkie_Talkie":462_000_000,
-        "LTE":        1_800_000_000,
+        "walkie_talkie":       446_000_000,
+        "cellular_network":    900_000_000,
+        "short_range_devices": 433_920_000,
+        "wireless_controllers":433_920_000,
+        "aircraft_tracking": 1_090_000_000,
     }
 
     def __init__(self, mode: str = "sim", interval: float = SIM_FRAME_INTERVAL) -> None:
@@ -159,50 +168,50 @@ class SimulationFrameSource:
         cycle = 0
         while True:
             cycle += 1
-            log.info("Demo cycle %d — Phase 1: LTE background only", cycle)
+            log.info("Demo cycle %d — Phase 1: cellular_network background", cycle)
             for i in range(15):
                 yield self._make_frame(
-                    freq=1_800_000_000, rssi_dbfs=-75.0, band_id="lte_band3",
-                    force_class="LTE", force_conf=0.99,
+                    freq=900_000_000, rssi_dbfs=-75.0, band_id="cellular_network",
+                    force_class="cellular_network", force_conf=0.99,
                 )
                 time.sleep(self._interval)
 
-            log.info("Demo cycle %d — Phase 2: Walkie-talkie approaching fast", cycle)
+            log.info("Demo cycle %d — Phase 2: walkie_talkie approaching fast", cycle)
             for i in range(20):
                 rssi = -85.0 + i * 2.0
                 yield self._make_frame(
-                    freq=462_000_000, rssi_dbfs=rssi, band_id="wifi_24",
-                    force_class="Walkie_Talkie", force_conf=0.93,
+                    freq=446_000_000, rssi_dbfs=rssi, band_id="walkie_talkie",
+                    force_class="walkie_talkie", force_conf=0.93,
                 )
                 time.sleep(self._interval)
 
-            log.info("Demo cycle %d — Phase 3: Key_Signal appears, Walkie_Talkie stationary", cycle)
+            log.info("Demo cycle %d — Phase 3: short_range_devices appears, walkie_talkie stationary", cycle)
             for i in range(10):
                 yield self._make_frame(
-                    freq=462_000_000, rssi_dbfs=-45.0, band_id="wifi_24",
-                    force_class="Walkie_Talkie", force_conf=0.91,
+                    freq=446_000_000, rssi_dbfs=-45.0, band_id="walkie_talkie",
+                    force_class="walkie_talkie", force_conf=0.91,
                 )
                 time.sleep(self._interval / 2)
                 yield self._make_frame(
-                    freq=433_000_000, rssi_dbfs=-65.0 + i * 0.5, band_id="iot_433",
-                    force_class="Key_Signal", force_conf=0.88,
+                    freq=433_920_000, rssi_dbfs=-65.0 + i * 0.5, band_id="short_range_devices",
+                    force_class="short_range_devices", force_conf=0.88,
                 )
                 time.sleep(self._interval / 2)
 
-            log.info("Demo cycle %d — Phase 4: Key_Signal departing", cycle)
+            log.info("Demo cycle %d — Phase 4: short_range_devices departing", cycle)
             for i in range(10):
                 rssi = -65.0 - i * 1.5
                 yield self._make_frame(
-                    freq=433_000_000, rssi_dbfs=rssi, band_id="iot_433",
-                    force_class="Key_Signal", force_conf=0.87,
+                    freq=433_920_000, rssi_dbfs=rssi, band_id="short_range_devices",
+                    force_class="short_range_devices", force_conf=0.87,
                 )
                 time.sleep(self._interval)
 
             log.info("Demo cycle %d complete — pausing before next cycle", cycle)
             for _ in range(10):
                 yield self._make_frame(
-                    freq=1_800_000_000, rssi_dbfs=-75.0, band_id="lte_band3",
-                    force_class="LTE", force_conf=0.99,
+                    freq=900_000_000, rssi_dbfs=-75.0, band_id="cellular_network",
+                    force_class="cellular_network", force_conf=0.99,
                 )
                 time.sleep(self._interval)
 
@@ -260,16 +269,16 @@ class SimulationFrameSource:
         """
         img = np.full((224, 224), 8, dtype=np.uint8)   # noise floor
 
-        if signal_class == "Key_Signal":
-            # Short narrow bursts
+        if signal_class == "short_range_devices":
+            # Short narrow bursts (key fob / remote)
             for _ in range(self._rng.integers(2, 5)):
-                col  = int(self._rng.integers(20, 200))
-                row  = int(self._rng.integers(80, 140))
+                col   = int(self._rng.integers(20, 200))
+                row   = int(self._rng.integers(80, 140))
                 width = int(self._rng.integers(1, 3))
                 height= int(self._rng.integers(5, 15))
                 img[row:row+height, col:col+width] = 220
 
-        elif signal_class == "Walkie_Talkie":
+        elif signal_class in ("walkie_talkie", "wireless_controllers"):
             # Narrow continuous vertical stripe with FM wobble
             row0  = int(self._rng.integers(90, 120))
             width = int(self._rng.integers(3, 6))
@@ -278,8 +287,8 @@ class SimulationFrameSource:
                 r = max(0, min(223, row0 + wobble))
                 img[r:r+width, col] = 200
 
-        elif signal_class == "LTE":
-            # Wide flat-top block
+        elif signal_class == "cellular_network":
+            # Wide flat-top block (LTE-like wideband occupancy)
             row0 = 62
             img[row0:row0+100, :] = 160
 
@@ -543,10 +552,15 @@ def main() -> None:
         help="Demo mode: scripted 3-signal scenario (good for presentations)",
     )
     mode_group.add_argument(
+        "--hardware",
+        action="store_true",
+        help="Real hardware mode: RTL-SDR Blog V4 sweeps 10 bands live",
+    )
+    mode_group.add_argument(
         "--socket",
         metavar="PATH",
         default=None,
-        help=f"Hardware mode: Unix socket path written by DSP partner code\n"
+        help=f"Socket mode: Unix socket path written by DSP partner code\n"
              f"(default: {DEFAULT_SOCKET})",
     )
 
@@ -598,10 +612,13 @@ def main() -> None:
     elif args.demo:
         source = SimulationFrameSource(mode="demo", interval=args.interval)
         log.info("Mode: demo (scripted scenario)")
+    elif args.hardware:
+        source = RTLSDRFrameSource()
+        log.info("Mode: hardware (RTL-SDR Blog V4, 10-band sweep)")
     else:
         socket_path = args.socket if args.socket != "None" else DEFAULT_SOCKET
         source = SocketFrameSource(socket_path=socket_path)
-        log.info("Mode: hardware (socket: %s)", socket_path)
+        log.info("Mode: socket (path: %s)", socket_path)
 
     # Select model path
     model_path = Path(args.model) if args.model else None

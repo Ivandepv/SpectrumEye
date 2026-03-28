@@ -10,10 +10,17 @@ Converts raw CNN classification results + RSSI values into:
 The BIE is pure Python logic — no ML, no GPU, no external dependencies.
 It runs identically with simulated data or real RTL-SDR data.
 
-Classes supported (Phase 2 scope):
-  Key_Signal    — key fob / remote control
-  Walkie_Talkie — narrowband FM radio
-  LTE           — 4G cellular (always-on background)
+Classes supported (v3 — 10 real RF bands):
+  aircraft_tracking   — ADS-B transponders (1090 MHz)
+  air_traffic         — ATC voice comms (108–137 MHz)
+  cellular_network    — LTE/5G (850–960 MHz)
+  local_repeaters     — Amateur radio 2m (144–148 MHz)
+  maritime            — VHF maritime (156–174 MHz)
+  noaa                — Weather satellites (137–138 MHz)
+  radio_fm            — FM broadcast (88–108 MHz)
+  short_range_devices — Car keys / gate remotes (315–433 MHz)
+  walkie_talkie       — UHF two-way radio (446–462 MHz)
+  wireless_controllers— ISM RC / IoT devices (433 MHz)
 
 Usage:
     bie = BIE(sensor_id="spectromeye-pi5-001")
@@ -44,7 +51,18 @@ import numpy as np
 
 # ─── CONSTANTS ────────────────────────────────────────────────────
 
-CLASS_LABELS = ["Key_Signal", "Walkie_Talkie", "LTE"]
+CLASS_LABELS = [
+    "aircraft_tracking",
+    "air_traffic",
+    "cellular_network",
+    "local_repeaters",
+    "maritime",
+    "noaa",
+    "radio_fm",
+    "short_range_devices",
+    "walkie_talkie",
+    "wireless_controllers",
+]
 
 BEHAVIORAL_STATES = [
     "APPEARED",
@@ -244,106 +262,344 @@ class BehavioralClassifier:
 
 _SENTENCES: dict[tuple, str] = {
 
-    # ── Key Signal (key fob / remote control) ─────────────────────
-    ("Key_Signal", "APPEARED"): (
-        "A short-range remote control signal has been detected nearby. "
-        "This could be a key fob, garage door opener, or similar device."
+    # ── Aircraft Tracking (ADS-B 1090 MHz) ────────────────────────
+    ("aircraft_tracking", "APPEARED"): (
+        "An aircraft ADS-B transponder signal has been detected. "
+        "A commercial or private aircraft is within range overhead."
     ),
-    ("Key_Signal", "APPROACHING_FAST"): (
-        "A remote control signal is getting significantly stronger. "
-        "Someone carrying a key fob or remote is moving toward this location quickly."
+    ("aircraft_tracking", "APPROACHING_FAST"): (
+        "ADS-B signal is rapidly strengthening. "
+        "An aircraft is descending or flying a fast approach vector toward this area."
     ),
-    ("Key_Signal", "APPROACHING_SLOW"): (
-        "A remote control signal is gradually getting stronger. "
-        "Someone carrying a key fob or remote may be walking toward this location."
+    ("aircraft_tracking", "APPROACHING_SLOW"): (
+        "ADS-B signal is gradually strengthening. "
+        "An aircraft may be descending or slowly moving toward this location."
     ),
-    ("Key_Signal", "STATIONARY"): (
-        "A remote control signal is active and stable nearby. "
-        "A key fob or remote device is transmitting at a fixed location."
+    ("aircraft_tracking", "STATIONARY"): (
+        "Stable ADS-B transponder signal. "
+        "An aircraft is circling or holding position overhead."
     ),
-    ("Key_Signal", "DEPARTING_SLOW"): (
-        "A remote control signal is weakening. "
-        "The device or person carrying it appears to be moving away."
+    ("aircraft_tracking", "DEPARTING_SLOW"): (
+        "ADS-B signal is weakening. "
+        "The aircraft is climbing or moving away from the area."
     ),
-    ("Key_Signal", "DEPARTING_FAST"): (
-        "A remote control signal has dropped sharply. "
-        "The device is departing this area quickly."
+    ("aircraft_tracking", "DEPARTING_FAST"): (
+        "ADS-B signal has dropped sharply. "
+        "The aircraft is rapidly departing or climbing out of transponder range."
     ),
-    ("Key_Signal", "ERRATIC"): (
-        "A remote control signal is fluctuating erratically. "
-        "The device may be in motion or the user is repeatedly activating it."
+    ("aircraft_tracking", "ERRATIC"): (
+        "ADS-B signal is fluctuating. "
+        "The aircraft may be maneuvering or the transponder signal is intermittent."
     ),
-    ("Key_Signal", "DISAPPEARED"): (
-        "The remote control signal has been lost. "
-        "The device is no longer in range."
+    ("aircraft_tracking", "DISAPPEARED"): (
+        "ADS-B signal has been lost. "
+        "The aircraft has passed out of transponder range."
     ),
 
-    # ── Walkie Talkie (NFM radio) ──────────────────────────────────
-    ("Walkie_Talkie", "APPEARED"): (
-        "A walkie-talkie radio signal has been detected nearby. "
-        "Someone in the area is using a two-way radio."
+    # ── Air Traffic (ATC VHF 108–137 MHz) ─────────────────────────
+    ("air_traffic", "APPEARED"): (
+        "Aircraft control voice communications detected on VHF air band. "
+        "An aircraft or control tower is actively transmitting nearby."
     ),
-    ("Walkie_Talkie", "APPROACHING_FAST"): (
-        "A walkie-talkie signal is getting much stronger rapidly. "
-        "A person using a two-way radio is approaching this location at speed."
+    ("air_traffic", "APPROACHING_FAST"): (
+        "Air traffic VHF signal is rapidly strengthening. "
+        "An aircraft in contact with ATC is approaching this area quickly."
     ),
-    ("Walkie_Talkie", "APPROACHING_SLOW"): (
-        "A walkie-talkie signal is gradually getting stronger. "
-        "A person using a two-way radio is moving closer to this location."
+    ("air_traffic", "APPROACHING_SLOW"): (
+        "Air traffic VHF signal is gradually getting stronger. "
+        "An aircraft is entering the local area."
     ),
-    ("Walkie_Talkie", "STATIONARY"): (
-        "A walkie-talkie signal is active and stable. "
+    ("air_traffic", "STATIONARY"): (
+        "Steady air traffic control communications detected. "
+        "Ongoing aircraft-tower exchange in range of this location."
+    ),
+    ("air_traffic", "DEPARTING_SLOW"): (
+        "Air traffic VHF signal is weakening. "
+        "The aircraft is moving away or the exchange is ending."
+    ),
+    ("air_traffic", "DEPARTING_FAST"): (
+        "Air traffic communications have dropped sharply. "
+        "The aircraft has departed the local frequency range."
+    ),
+    ("air_traffic", "ERRATIC"): (
+        "Air traffic VHF signal is fluctuating. "
+        "The aircraft may be at the edge of range or switching frequencies."
+    ),
+    ("air_traffic", "DISAPPEARED"): (
+        "Air traffic communications signal lost. "
+        "The aircraft has left range or switched to another frequency."
+    ),
+
+    # ── Cellular Network (LTE/5G 850–960 MHz) ─────────────────────
+    ("cellular_network", "APPEARED"): (
+        "A cellular network signal has been detected. "
+        "Normal LTE or 5G activity from a nearby tower or mobile device."
+    ),
+    ("cellular_network", "APPROACHING_FAST"): (
+        "Cellular signal is rapidly strengthening. "
+        "A person carrying a mobile device is approaching this location quickly."
+    ),
+    ("cellular_network", "APPROACHING_SLOW"): (
+        "Cellular signal is gradually getting stronger. "
+        "A person with a mobile device is moving toward this location."
+    ),
+    ("cellular_network", "STATIONARY"): (
+        "Stable cellular network activity. "
+        "Normal LTE or 5G transmission from a tower or stationary device."
+    ),
+    ("cellular_network", "DEPARTING_SLOW"): (
+        "Cellular signal is weakening. "
+        "A mobile device is moving away from this location."
+    ),
+    ("cellular_network", "DEPARTING_FAST"): (
+        "Cellular signal has dropped sharply. "
+        "A person with a mobile device is departing quickly."
+    ),
+    ("cellular_network", "ERRATIC"): (
+        "Cellular signal is fluctuating unusually. "
+        "A device may be at the edge of cell coverage or switching towers."
+    ),
+    ("cellular_network", "DISAPPEARED"): (
+        "Cellular signal has been lost. "
+        "The device or tower signal is no longer detectable."
+    ),
+
+    # ── Local Repeaters (Amateur 2m, 144–148 MHz) ──────────────────
+    ("local_repeaters", "APPEARED"): (
+        "An amateur radio signal has been detected on the 2m band. "
+        "A licensed ham radio operator or repeater is active nearby."
+    ),
+    ("local_repeaters", "APPROACHING_FAST"): (
+        "Amateur radio signal is rapidly strengthening. "
+        "A mobile ham radio operator is approaching this location quickly."
+    ),
+    ("local_repeaters", "APPROACHING_SLOW"): (
+        "Amateur radio signal is gradually getting stronger. "
+        "A radio operator may be driving or walking toward this location."
+    ),
+    ("local_repeaters", "STATIONARY"): (
+        "Steady amateur radio transmission. "
+        "A ham radio operator or repeater is active at a fixed location."
+    ),
+    ("local_repeaters", "DEPARTING_SLOW"): (
+        "Amateur radio signal is weakening. "
+        "The operator appears to be moving away from this location."
+    ),
+    ("local_repeaters", "DEPARTING_FAST"): (
+        "Amateur radio signal has dropped sharply. "
+        "The mobile operator has departed the area quickly."
+    ),
+    ("local_repeaters", "ERRATIC"): (
+        "Amateur radio signal is fluctuating erratically. "
+        "The operator may be mobile or the signal is obstructed."
+    ),
+    ("local_repeaters", "DISAPPEARED"): (
+        "Amateur radio signal has been lost. "
+        "The operator has left range or stopped transmitting."
+    ),
+
+    # ── Maritime (VHF 156–174 MHz) ─────────────────────────────────
+    ("maritime", "APPEARED"): (
+        "A maritime VHF radio transmission has been detected. "
+        "A vessel or shore station is communicating on the maritime band."
+    ),
+    ("maritime", "APPROACHING_FAST"): (
+        "Maritime VHF signal is rapidly strengthening. "
+        "A vessel is approaching this location at speed."
+    ),
+    ("maritime", "APPROACHING_SLOW"): (
+        "Maritime VHF signal is gradually getting stronger. "
+        "A vessel is slowly approaching the area."
+    ),
+    ("maritime", "STATIONARY"): (
+        "Steady maritime VHF transmission. "
+        "A vessel or shore station is at a stable position."
+    ),
+    ("maritime", "DEPARTING_SLOW"): (
+        "Maritime VHF signal is weakening. "
+        "The vessel is moving away from this location."
+    ),
+    ("maritime", "DEPARTING_FAST"): (
+        "Maritime VHF signal has dropped sharply. "
+        "The vessel is departing at speed."
+    ),
+    ("maritime", "ERRATIC"): (
+        "Maritime VHF signal is fluctuating erratically. "
+        "The vessel may be turning or at the edge of VHF range."
+    ),
+    ("maritime", "DISAPPEARED"): (
+        "Maritime VHF signal has been lost. "
+        "The vessel or shore station is no longer transmitting or in range."
+    ),
+
+    # ── NOAA Weather Satellites (137–138 MHz) ──────────────────────
+    ("noaa", "APPEARED"): (
+        "A NOAA weather satellite signal has been detected at 137 MHz. "
+        "A meteorological satellite is currently overhead."
+    ),
+    ("noaa", "APPROACHING_FAST"): (
+        "NOAA satellite signal is rapidly strengthening. "
+        "The satellite is rising quickly above the horizon toward overhead."
+    ),
+    ("noaa", "APPROACHING_SLOW"): (
+        "NOAA satellite signal is gradually getting stronger. "
+        "The satellite is continuing its orbital pass toward zenith."
+    ),
+    ("noaa", "STATIONARY"): (
+        "NOAA satellite signal is at peak strength. "
+        "The satellite is near its highest elevation in the current pass."
+    ),
+    ("noaa", "DEPARTING_SLOW"): (
+        "NOAA satellite signal is weakening. "
+        "The satellite is beginning to descend toward the horizon."
+    ),
+    ("noaa", "DEPARTING_FAST"): (
+        "NOAA satellite signal has dropped quickly. "
+        "The satellite is approaching the horizon and will be lost soon."
+    ),
+    ("noaa", "ERRATIC"): (
+        "NOAA satellite signal is fluctuating. "
+        "The satellite may be at a low elevation angle with terrain obstruction."
+    ),
+    ("noaa", "DISAPPEARED"): (
+        "NOAA satellite signal has been lost. "
+        "The satellite has passed below the horizon."
+    ),
+
+    # ── FM Radio Broadcast (88–108 MHz) ───────────────────────────
+    ("radio_fm", "APPEARED"): (
+        "An FM broadcast station signal has been detected. "
+        "Commercial radio transmission in the 88–108 MHz band is present."
+    ),
+    ("radio_fm", "APPROACHING_FAST"): (
+        "FM radio signal is rapidly strengthening. "
+        "A mobile FM source or antenna has changed position significantly."
+    ),
+    ("radio_fm", "APPROACHING_SLOW"): (
+        "FM radio signal is gradually getting stronger. "
+        "Station signal level is increasing."
+    ),
+    ("radio_fm", "STATIONARY"): (
+        "Stable FM radio broadcast signal. "
+        "Normal commercial radio transmission from a fixed tower."
+    ),
+    ("radio_fm", "DEPARTING_SLOW"): (
+        "FM radio signal is weakening. "
+        "Station signal level is decreasing."
+    ),
+    ("radio_fm", "DEPARTING_FAST"): (
+        "FM radio signal has dropped sharply. "
+        "The signal source has moved or the transmission has ended."
+    ),
+    ("radio_fm", "ERRATIC"): (
+        "FM radio signal is fluctuating. "
+        "Multi-path interference or a mobile FM source is present."
+    ),
+    ("radio_fm", "DISAPPEARED"): (
+        "FM radio signal has been lost. "
+        "The broadcast station is no longer detectable on this frequency."
+    ),
+
+    # ── Short Range Devices (315–433 MHz, car keys, gates) ─────────
+    ("short_range_devices", "APPEARED"): (
+        "A short-range RF device signal has been detected. "
+        "A key fob, gate remote, or doorbell transmitter is active nearby."
+    ),
+    ("short_range_devices", "APPROACHING_FAST"): (
+        "Short-range device signal is rapidly strengthening. "
+        "Someone carrying a key fob or remote control is approaching quickly."
+    ),
+    ("short_range_devices", "APPROACHING_SLOW"): (
+        "Short-range device signal is gradually getting stronger. "
+        "A person with a key fob or remote is walking toward this location."
+    ),
+    ("short_range_devices", "STATIONARY"): (
+        "Short-range device signal is stable. "
+        "A key fob or remote control is transmitting at a fixed location."
+    ),
+    ("short_range_devices", "DEPARTING_SLOW"): (
+        "Short-range device signal is weakening. "
+        "The device or person carrying it is moving away."
+    ),
+    ("short_range_devices", "DEPARTING_FAST"): (
+        "Short-range device signal has dropped sharply. "
+        "The device is departing this area quickly."
+    ),
+    ("short_range_devices", "ERRATIC"): (
+        "Short-range device signal is fluctuating erratically. "
+        "The device may be in motion or being repeatedly activated."
+    ),
+    ("short_range_devices", "DISAPPEARED"): (
+        "Short-range device signal has been lost. "
+        "The device is no longer in range or has stopped transmitting."
+    ),
+
+    # ── Walkie-Talkie (UHF 446–462 MHz) ───────────────────────────
+    ("walkie_talkie", "APPEARED"): (
+        "A walkie-talkie radio signal has been detected. "
+        "Someone in the area is using a two-way UHF radio."
+    ),
+    ("walkie_talkie", "APPROACHING_FAST"): (
+        "Walkie-talkie signal is rapidly getting stronger. "
+        "A person using a two-way radio is approaching this location quickly."
+    ),
+    ("walkie_talkie", "APPROACHING_SLOW"): (
+        "Walkie-talkie signal is gradually getting stronger. "
+        "A radio operator is moving toward this location."
+    ),
+    ("walkie_talkie", "STATIONARY"): (
+        "Walkie-talkie signal is active and stable. "
         "A person with a two-way radio is nearby and not moving."
     ),
-    ("Walkie_Talkie", "DEPARTING_SLOW"): (
-        "A walkie-talkie signal is weakening. "
-        "The radio operator appears to be moving away from this location."
+    ("walkie_talkie", "DEPARTING_SLOW"): (
+        "Walkie-talkie signal is weakening. "
+        "The radio operator is moving away from this location."
     ),
-    ("Walkie_Talkie", "DEPARTING_FAST"): (
-        "A walkie-talkie signal has dropped sharply. "
+    ("walkie_talkie", "DEPARTING_FAST"): (
+        "Walkie-talkie signal has dropped sharply. "
         "The radio operator is departing this area quickly."
     ),
-    ("Walkie_Talkie", "ERRATIC"): (
-        "A walkie-talkie signal is fluctuating erratically. "
-        "The operator may be moving between locations or the signal is being blocked and unblocked."
+    ("walkie_talkie", "ERRATIC"): (
+        "Walkie-talkie signal is fluctuating erratically. "
+        "The operator may be moving between locations or the signal is intermittent."
     ),
-    ("Walkie_Talkie", "DISAPPEARED"): (
-        "The walkie-talkie signal has been lost. "
+    ("walkie_talkie", "DISAPPEARED"): (
+        "Walkie-talkie signal has been lost. "
         "The radio is no longer transmitting or has moved out of range."
     ),
 
-    # ── LTE (4G cellular — always-on background) ───────────────────
-    ("LTE", "APPEARED"): (
-        "A 4G LTE cellular signal has been detected. "
-        "This is normal background activity from a nearby mobile tower or device."
+    # ── Wireless Controllers (ISM 433 MHz, RC / IoT) ──────────────
+    ("wireless_controllers", "APPEARED"): (
+        "A wireless controller signal has been detected at 433 MHz. "
+        "An RC transmitter, drone controller, or IoT device is active."
     ),
-    ("LTE", "APPROACHING_FAST"): (
-        "A cellular signal is getting much stronger. "
-        "A person carrying a phone or mobile device is moving toward this location quickly."
+    ("wireless_controllers", "APPROACHING_FAST"): (
+        "Wireless controller signal is rapidly strengthening. "
+        "A person with an RC transmitter or drone controller is approaching quickly."
     ),
-    ("LTE", "APPROACHING_SLOW"): (
-        "A cellular signal is gradually getting stronger. "
-        "A person carrying a phone is likely walking toward this location."
+    ("wireless_controllers", "APPROACHING_SLOW"): (
+        "Wireless controller signal is gradually getting stronger. "
+        "An RC operator or drone controller is moving toward this location."
     ),
-    ("LTE", "STATIONARY"): (
-        "Normal 4G LTE cellular activity. "
-        "A mobile tower or nearby device is transmitting at a stable level."
+    ("wireless_controllers", "STATIONARY"): (
+        "Wireless controller signal is stable. "
+        "An RC transmitter or IoT device is operating at a fixed position."
     ),
-    ("LTE", "DEPARTING_SLOW"): (
-        "A cellular signal is weakening. "
-        "A person with a mobile device is moving away."
+    ("wireless_controllers", "DEPARTING_SLOW"): (
+        "Wireless controller signal is weakening. "
+        "The RC operator or device is moving away."
     ),
-    ("LTE", "DEPARTING_FAST"): (
-        "A cellular signal has dropped sharply. "
-        "A person with a mobile device is leaving the area quickly."
+    ("wireless_controllers", "DEPARTING_FAST"): (
+        "Wireless controller signal has dropped sharply. "
+        "The RC operator has departed the area quickly."
     ),
-    ("LTE", "ERRATIC"): (
-        "A cellular signal is fluctuating unusually. "
-        "This may indicate a device moving in and out of coverage, or unusual interference."
+    ("wireless_controllers", "ERRATIC"): (
+        "Wireless controller signal is fluctuating erratically. "
+        "An RC device may be maneuvering, jamming, or at range limits."
     ),
-    ("LTE", "DISAPPEARED"): (
-        "The cellular signal has been lost. "
-        "The device or tower is no longer detectable."
+    ("wireless_controllers", "DISAPPEARED"): (
+        "Wireless controller signal has been lost. "
+        "The RC transmitter or IoT device is no longer active or in range."
     ),
 }
 
@@ -358,11 +614,20 @@ def get_sentence(signal_class: str, state: str) -> str:
 
 # ─── THREAT CALCULATOR ────────────────────────────────────────────
 
-# Per-class base threat score when signal is active
+# Per-class base threat score (0–5) when signal is active.
+# Background/infrastructure signals score 0; signals indicating human
+# activity with operational relevance score higher.
 _CLASS_BASE_SCORE: dict[str, int] = {
-    "Key_Signal":    2,    # low — remote controls are usually benign
-    "Walkie_Talkie": 4,    # moderate — could indicate coordinated activity
-    "LTE":           0,    # background — always present, not a threat
+    "aircraft_tracking":   0,  # ADS-B civil aviation — informational only
+    "air_traffic":         0,  # ATC comms — normal aviation background
+    "cellular_network":    0,  # LTE/5G tower — always-on background
+    "local_repeaters":     1,  # ham radio operator — unusual, low concern
+    "maritime":            1,  # vessel comms — informational
+    "noaa":                0,  # weather satellite — purely informational
+    "radio_fm":            0,  # broadcast tower — background
+    "short_range_devices": 2,  # key fob / remote — indicates nearby person
+    "walkie_talkie":       4,  # two-way radio — coordinated activity, highest concern
+    "wireless_controllers":3,  # RC / drone controller — could be UAV activity
 }
 
 # State multipliers applied to base score
@@ -595,9 +860,9 @@ def _run_tests() -> None:
 
     # ── Test 1: APPEARED on first detection ────────────────────────
     print("Test 1 — APPEARED on first detection:")
-    out = bie.process("Walkie_Talkie", 0.95, -65.0, 462000000, now)
+    out = bie.process("walkie_talkie", 0.95, -65.0, 446000000, now)
     check("state is APPEARED (not enough history)", out["behavioral_state"] == "APPEARED")
-    check("threat_level not CLEAR (walkie talkie active)", out["threat_level"] != "CLEAR")
+    check("threat_level not CLEAR (walkie_talkie active)", out["threat_level"] != "CLEAR")
     check("interpretation is a string", isinstance(out["interpretation"], str))
     check("event_id starts with evt_", out["event_id"].startswith("evt_"))
 
@@ -609,7 +874,7 @@ def _run_tests() -> None:
     for i in range(15):
         rssi = -80.0 + i * 2.0     # +2 dBFS per step
         t   += 500                  # 0.5 seconds between samples → slope ≈ +4 dBFS/s
-        out  = bie.process("Walkie_Talkie", 0.93, rssi, 462000000, t)
+        out  = bie.process("walkie_talkie", 0.93, rssi, 446000000, t)
     check("state is APPROACHING_FAST", out["behavioral_state"] == "APPROACHING_FAST")
     check("slope is positive", out["rssi_slope_dbfs_per_s"] > 0)
     check("threat not CLEAR", out["threat_level"] != "CLEAR")
@@ -621,7 +886,7 @@ def _run_tests() -> None:
     for i in range(15):
         t   += 500
         rssi = -60.0 + np.random.normal(0, 0.3)   # tight noise around -60
-        out  = bie.process("Walkie_Talkie", 0.91, rssi, 462000000, t)
+        out  = bie.process("walkie_talkie", 0.91, rssi, 446000000, t)
     check("state is STATIONARY", out["behavioral_state"] == "STATIONARY")
     check("slope near zero", abs(out["rssi_slope_dbfs_per_s"]) < SLOPE_SLOW)
 
@@ -632,7 +897,7 @@ def _run_tests() -> None:
     for i in range(15):
         rssi = -40.0 - i * 2.5    # -2.5 dBFS per step
         t   += 500
-        out  = bie.process("Key_Signal", 0.88, rssi, 433000000, t)
+        out  = bie.process("short_range_devices", 0.88, rssi, 433920000, t)
     check("state is DEPARTING_FAST", out["behavioral_state"] == "DEPARTING_FAST")
     check("slope is negative", out["rssi_slope_dbfs_per_s"] < 0)
 
@@ -644,25 +909,25 @@ def _run_tests() -> None:
     for i in range(15):
         rssi = -60.0 + rng.uniform(-8, 8)   # ±8 dBFS random jumps
         t   += 500
-        out  = bie.process("Walkie_Talkie", 0.89, rssi, 462000000, t)
+        out  = bie.process("walkie_talkie", 0.89, rssi, 446000000, t)
     check("state is ERRATIC", out["behavioral_state"] == "ERRATIC")
     check("variance > threshold", out["rssi_variance"] > VARIANCE_ERRATIC)
 
     # ── Test 6: Low confidence → Unknown ──────────────────────────
     print("\nTest 6 — Low confidence below threshold:")
     bie.reset()
-    out = bie.process("Walkie_Talkie", 0.45, -70.0, 462000000, now)
+    out = bie.process("walkie_talkie", 0.45, -70.0, 446000000, now)
     check("class becomes Unknown", out["signal_class"] == "Unknown")
 
-    # ── Test 7: LTE → CLEAR threat ────────────────────────────────
-    print("\nTest 7 — LTE alone produces CLEAR threat:")
+    # ── Test 7: cellular_network alone → CLEAR threat ─────────────
+    print("\nTest 7 — cellular_network alone produces CLEAR threat:")
     bie.reset()
     t = now
     for i in range(10):
         t  += 500
-        out = bie.process("LTE", 0.99, -75.0, 1800000000, t)
-    check("LTE is STATIONARY", out["behavioral_state"] == "STATIONARY")
-    check("threat is CLEAR for LTE only", out["threat_level"] == "CLEAR")
+        out = bie.process("cellular_network", 0.99, -75.0, 900000000, t)
+    check("cellular_network is STATIONARY", out["behavioral_state"] == "STATIONARY")
+    check("threat is CLEAR for cellular_network only", out["threat_level"] == "CLEAR")
 
     # ── Test 8: Sentence library covers all combinations ──────────
     print("\nTest 8 — Sentence library completeness:")
@@ -683,13 +948,13 @@ def _run_tests() -> None:
     t = now
     for i in range(6):
         t += 500
-        bie.process("Walkie_Talkie", 0.91, -65.0, 462000000, t)
-        bie.process("LTE", 0.99, -75.0, 1800000000, t)
-    out = bie.process("Key_Signal", 0.85, -70.0, 433000000, t + 500)
+        bie.process("walkie_talkie", 0.91, -65.0, 446000000, t)
+        bie.process("cellular_network", 0.99, -75.0, 900000000, t)
+    out = bie.process("short_range_devices", 0.85, -70.0, 433920000, t + 500)
     classes_in_snapshot = {s["signal_class"] for s in out["active_signals"]}
-    check("snapshot contains Walkie_Talkie", "Walkie_Talkie" in classes_in_snapshot)
-    check("snapshot contains LTE", "LTE" in classes_in_snapshot)
-    check("snapshot contains Key_Signal", "Key_Signal" in classes_in_snapshot)
+    check("snapshot contains walkie_talkie", "walkie_talkie" in classes_in_snapshot)
+    check("snapshot contains cellular_network", "cellular_network" in classes_in_snapshot)
+    check("snapshot contains short_range_devices", "short_range_devices" in classes_in_snapshot)
 
     # ── Summary ───────────────────────────────────────────────────
     print(f"\n{'─'*40}")
@@ -711,14 +976,14 @@ if __name__ == "__main__":
         _run_tests()
     else:
         # Quick interactive demo
-        print("BIE interactive demo — feeding simulated Walkie_Talkie approach sequence\n")
+        print("BIE interactive demo — feeding simulated walkie_talkie approach sequence\n")
         bie = BIE()
         t   = int(time.time() * 1000)
         rssi_sequence = [-85, -82, -79, -76, -73, -70, -67, -64, -61, -58,
                          -56, -55, -55, -55, -54, -55, -56, -60, -65, -72]
         for i, rssi in enumerate(rssi_sequence):
             t  += 600
-            out = bie.process("Walkie_Talkie", 0.92, float(rssi), 462000000, t, frame_id=i)
+            out = bie.process("walkie_talkie", 0.92, float(rssi), 446000000, t, frame_id=i)
             print(
                 f"  [{i+1:02d}] RSSI={rssi:4.0f} dBFS  "
                 f"state={out['behavioral_state']:<16}  "

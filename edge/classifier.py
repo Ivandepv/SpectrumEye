@@ -30,11 +30,23 @@ import numpy as np
 
 # ─── CONFIGURATION ────────────────────────────────────────────────
 
-# 3-class scope for Phase 2 (matches training)
-CLASS_LABELS = ["Key_Signal", "Walkie_Talkie", "LTE"]
+# 10-class model v3 — trained on real RTL-SDR Blog V4 data
+# Order is alphabetical (matches Keras image_dataset_from_directory training order)
+CLASS_LABELS = [
+    "aircraft_tracking",
+    "air_traffic",
+    "cellular_network",
+    "local_repeaters",
+    "maritime",
+    "noaa",
+    "radio_fm",
+    "short_range_devices",
+    "walkie_talkie",
+    "wireless_controllers",
+]
 
 # Path to production model (relative to this file)
-_DEFAULT_MODEL = Path(__file__).parent.parent / "ml" / "models" / "production" / "spectromeye_best.keras"
+_DEFAULT_MODEL = Path(__file__).parent.parent / "ml" / "models" / "production" / "best_model.keras"
 
 # Confidence thresholds (Interface Contract §Interface B)
 CONF_HIGH   = 0.85   # ≥ 0.85 → HIGH, full confidence
@@ -136,7 +148,7 @@ class SpectrumClassifier:
 
         # Run inference
         t0    = time.perf_counter()
-        probs = self._model.predict(x, verbose=0)[0]   # shape (3,)
+        probs = self._model.predict(x, verbose=0)[0]   # shape (10,)
         inference_ms = (time.perf_counter() - t0) * 1000.0
 
         # Decode predictions

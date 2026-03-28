@@ -52,19 +52,34 @@ import websockets.server
 log = logging.getLogger("ws_server")
 
 # ─── DEFAULT BEARINGS (degrees) ──────────────────────────────────
-# Used when no real direction-finding hardware is available.
-# LTE tower is roughly SW, walkie-talkie is NW, key fob starts NE.
+# Simulated bearings — no real direction-finding hardware.
+# Spread across compass to make the radar look natural.
+# Per-tick drift simulates moving sources (0 = fixed infrastructure).
 _DEFAULT_BEARING = {
-    "LTE":          210,
-    "Walkie_Talkie": 305,
-    "Key_Signal":    52,
+    "aircraft_tracking":   0,    # overhead — bearing changes fast
+    "air_traffic":        270,   # west — airport direction
+    "cellular_network":   200,   # south-southwest — cell tower
+    "local_repeaters":     45,   # northeast — repeater hill
+    "maritime":           225,   # southwest — port direction
+    "noaa":                 0,   # overhead — satellite pass
+    "radio_fm":           180,   # south — broadcast tower
+    "short_range_devices": 90,   # east — nearby person
+    "walkie_talkie":      315,   # northwest — operator
+    "wireless_controllers":135,  # southeast — RC operator
 }
 
-# Small per-tick drift (degrees) for realism in sim/demo mode
+# Small per-tick drift (degrees) — 0 for fixed infrastructure
 _BEARING_DRIFT = {
-    "LTE":           0.0,   # fixed — tower
-    "Walkie_Talkie": 0.5,   # slight movement
-    "Key_Signal":    1.5,   # moving device
+    "aircraft_tracking":   2.0,  # fast — low-altitude aircraft
+    "air_traffic":         0.8,  # aircraft in transit
+    "cellular_network":    0.0,  # fixed tower
+    "local_repeaters":     0.3,  # possibly mobile
+    "maritime":            0.5,  # slow vessel
+    "noaa":                1.5,  # satellite orbital pass
+    "radio_fm":            0.0,  # fixed broadcast tower
+    "short_range_devices": 1.5,  # person with key fob
+    "walkie_talkie":       0.5,  # walking radio operator
+    "wireless_controllers":1.0,  # RC operator / drone
 }
 
 
