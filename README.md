@@ -1,106 +1,104 @@
 # SpectrumEye
 
-**RF Situational Awareness System** — real-time detection and classification of radio frequency signals using a CNN trained on real IQ captures, and a Behavioral Inference Engine that translates signal patterns into human-readable threat assessments.
+**RF Situational Awareness System** — real-time radio frequency detection and classification using a CNN trained on real IQ captures, with a Behavioral Inference Engine that translates signal patterns into human-readable threat assessments.
 
-Built in Tainan, Taiwan. Current state: **fully working end-to-end on Raspberry Pi 5** — RTL-SDR Blog V4 → CNN → BIE → WebSocket → React radar dashboard, confirmed live.
+Built on a Raspberry Pi 5 with an RTL-SDR Blog V4 dongle. Streams results live to a phosphor radar dashboard in the browser.
 
 ---
 
 ## What It Does
 
-SpectrumEye sweeps 10 RF bands with an RTL-SDR dongle, converts IQ samples into spectrograms, and classifies them with a CNN. A Behavioral Inference Engine (BIE) tracks signal behavior over time and generates plain-language threat assessments. Results stream live to a phosphor radar dashboard via WebSocket.
+SpectrumEye sweeps 10 RF bands with an RTL-SDR dongle, converts each capture into a spectrogram image, classifies it with a MobileNetV2 CNN, and tracks behavioral state over time. Results stream to a React radar dashboard via WebSocket.
 
 ```
 RTL-SDR Blog V4 (500 kHz – 1.75 GHz)
-        ↓  IQ samples (real RF, 2.048 MSPS)
-  224×224 spectrogram (matplotlib Agg, identical to training)
+        ↓  IQ samples (2.048 MSPS, ~128 ms per band)
+  224×224 grayscale spectrogram (matplotlib Agg — identical to training)
         ↓
-  CNN — MobileNetV2 (97.45% accuracy, 10 classes, real RF data)
+  CNN — MobileNetV2 α=0.75  (97.45% accuracy, 10 classes, real RF data)
         ↓
-  Behavioral Inference Engine (RSSI tracking, 8 states)
+  Behavioral Inference Engine  (RSSI tracking, 8 states, threat scoring)
         ↓
   WebSocket → React Phosphor Radar Dashboard
 ```
 
 ---
 
-## Current State
+## Signal Classes
 
-| Component | Status | Notes |
-|-----------|--------|-------|
-| RTL-SDR Blog V4 hardware | ✅ Working | Pi 5, real-time 10-band sweep |
-| CNN model (v3_colab) | ✅ Working | 97.45% accuracy, 10 classes, real RF data |
-| Edge pipeline | ✅ Working | `--hardware`, `--demo`, `--sim` modes |
-| WebSocket bridge | ✅ Working | BIE output → React dashboard |
-| Radar dashboard | ✅ Working | Live CNN badge, JS fallback when offline |
-| Graceful shutdown | ✅ Fixed | Ctrl+C properly closes SDR dongle |
-| Cloud pipeline (AWS) | 🔲 Stub | Interface ready, CDK not written |
-| TFLite INT8 conversion | 🔲 Next | Target <50ms inference on Pi 5 |
-| Expand signal classes | 🔲 Next | DJI OcuSync, FPV, WiFi, ADS-B |
-
----
-
-## Signal Classes (10 real RF bands)
-
-| Class | Center Frequency | Description |
-|-------|-----------------|-------------|
+| Class | Frequency | Description |
+|-------|-----------|-------------|
 | `radio_fm` | 98 MHz | FM broadcast |
-| `air_traffic` | 122 MHz | Aerial control tower |
-| `noaa` | 137.5 MHz | Meteorological satellites |
-| `local_repeaters` | 146 MHz | Amateur radio (2m band) |
+| `air_traffic` | 122 MHz | ATC voice (VHF air band) |
+| `noaa` | 137.5 MHz | NOAA weather satellites |
+| `local_repeaters` | 146 MHz | Amateur radio 2m band |
 | `maritime` | 156.8 MHz | Maritime VHF Ch16 |
-| `short_range_devices` | 315 MHz | Car keys, gates, doorbells |
-| `wireless_controllers` | 433.92 MHz | ISM short-range devices |
+| `short_range_devices` | 315 MHz | Car keys, gate remotes |
+| `wireless_controllers` | 433.92 MHz | RC controllers, IoT devices |
 | `walkie_talkie` | 446 MHz | PMR446 handheld radios |
-| `cellular_network` | 900 MHz | GSM/LTE/5G |
-| `aircraft_tracking` | 1090 MHz | ADS-B commercial aircraft |
+| `cellular_network` | 900 MHz | GSM / LTE / 5G |
+| `aircraft_tracking` | 1090 MHz | ADS-B transponders |
 
 ---
 
 ## System Architecture
 
 ```
-┌─────────────────────────── EDGE (Raspberry Pi 5) ───────────────────────────┐
-│                                                                               │
-│  [RTL-SDR Blog V4] ──USB──► IQ Capture ──► 224×224 spectrogram (Agg)        │
-│                              2.048 MSPS      NFFT=256, Hanning, 50% OVL     │
-│                              10-band sweep                                    │
-│                                                   │                          │
-│                                    ┌──────────────▼─────────────┐            │
-│                                    │  SpectrumClassifier         │            │
-│                                    │  MobileNetV2 (α=0.75)      │            │
-│                                    │  97.45% · 10 classes        │            │
-│                                    └──────────────┬─────────────┘            │
-│                                                   │                          │
-│                    ┌──────────────────────────────▼──────────────────┐       │
-│                    │         Behavioral Inference Engine (BIE)        │       │
-│                    │  RSSI tracking · trend analysis · 8 states       │       │
-│                    └──────────────────────────────┬──────────────────┘       │
-│                                                   │                          │
-│              ┌────────────────┬───────────────────┤                          │
-│              ▼                ▼                   ▼                          │
-│    [Local Display]  [Alert Controller]   [WsBroadcastServer]                 │
-│    (terminal/Flask)  (LED/sound stub)    ws://localhost:8765                 │
-└──────────────────────────────────────────────────┬──────────────────────────┘
-                                                   │ WebSocket
-                                        ┌──────────▼──────────┐
-                                        │   React Dashboard    │
-                                        │   Phosphor Radar     │
-                                        │   Signal Cards       │
-                                        │   Alert Log          │
-                                        └─────────────────────┘
+┌───────────────────────── EDGE (Raspberry Pi 5) ─────────────────────────┐
+│                                                                           │
+│  [RTL-SDR Blog V4] ──USB──► IQ Capture ──► 224×224 spectrogram (Agg)    │
+│                              2.048 MSPS      NFFT=256, Hanning, 50% OVL  │
+│                              10-band sweep                                │
+│                                                   │                      │
+│                                    ┌──────────────▼──────────────┐       │
+│                                    │  SpectrumClassifier          │       │
+│                                    │  MobileNetV2 (α=0.75)        │       │
+│                                    │  97.45% · 10 classes         │       │
+│                                    └──────────────┬──────────────┘       │
+│                                                   │                      │
+│                    ┌──────────────────────────────▼──────────────┐       │
+│                    │       Behavioral Inference Engine (BIE)      │       │
+│                    │  RSSI slope · EMA smoothing · 8 states       │       │
+│                    │  Threat scoring (CLEAR/MODERATE/ELEVATED/    │       │
+│                    │                  CRITICAL)                   │       │
+│                    └──────────────────────────────┬──────────────┘       │
+│                                                   │                      │
+│                 ┌─────────────────────────────────┤                      │
+│                 ▼                                 ▼                      │
+│       [AlertController]              [WsBroadcastServer]                 │
+│       terminal + GPIO/buzzer         ws://localhost:8765                 │
+└─────────────────────────────────────────────────┬────────────────────────┘
+                                                  │ WebSocket
+                                       ┌──────────▼──────────┐
+                                       │   React Dashboard    │
+                                       │   Phosphor Radar     │
+                                       │   Signal Cards       │
+                                       │   Alert Log          │
+                                       └─────────────────────┘
 ```
+
+---
+
+## Hardware
+
+| Component | Model | Notes |
+|-----------|-------|-------|
+| SBC | Raspberry Pi 5 (8 GB) | Debian Trixie, Python 3.13 |
+| SDR dongle | RTL-SDR Blog V4 | R828D tuner, 500 kHz – 1.75 GHz |
+
+The RTL-SDR Blog V4 is a passive receive-only device. No RF output, no transmission.
 
 ---
 
 ## Quick Start
 
-### Dev Machine (Arch Linux, Python 3.12)
+### Dev Machine (no hardware)
 
 ```bash
-# Edge pipeline — simulation mode
 python3.12 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+
+# Scripted demo scenario (CNN bypassed, good for presentations)
 python edge/main.py --demo --display ws
 
 # Dashboard (separate terminal)
@@ -108,64 +106,57 @@ cd webapp && npm install && npm run dev
 # → http://localhost:5173
 ```
 
----
-
-### Raspberry Pi 5 (Debian Trixie, Python 3.13)
-
-**One-time setup:**
+### Raspberry Pi 5 — One-Time Setup
 
 ```bash
 # System packages
-sudo apt install rtl-sdr
+sudo apt install rtl-sdr nodejs npm
 
-# Blacklist DVB kernel module (prevents it from claiming the dongle)
+# Prevent the DVB kernel module from claiming the dongle
 echo 'blacklist dvb_usb_rtl28xxu' | sudo tee /etc/modprobe.d/rtlsdr-blacklist.conf
 echo 'blacklist dvb_usb_rtl2832u' | sudo tee -a /etc/modprobe.d/rtlsdr-blacklist.conf
+sudo rmmod dvb_usb_rtl28xxu 2>/dev/null || true
 
-# Python venv
-cd ~/Desktop/SpectrumEye
+# Python virtual environment
 python3 -m venv .venv && source .venv/bin/activate
 pip install --prefer-binary -r requirements.txt
 
-# Node.js for webapp
-sudo apt install nodejs npm
+# Copy the trained model (not in git — large binary)
+# ml/models/production/best_model.keras   (~19 MB)
+# ml/models/production/best_model.tflite  (~2 MB, optional but 4–8× faster)
+
+# Web app
 cd webapp && npm install
 ```
 
-**Deploy model:**
-
-```bash
-# Copy best_model.keras to ml/models/production/ (excluded from git — large binary)
-# File: ml/models/production/best_model.keras
-```
-
-**Run:**
+### Running the Live Pipeline
 
 ```bash
 # Terminal 1 — edge pipeline
 source .venv/bin/activate
 python edge/main.py --hardware --display ws
 
-# Terminal 2 — webapp
+# Terminal 2 — web dashboard
 cd webapp && npm run dev -- --host
-# → http://<pi-ip>:5173 from any device on the same network
+# Access from any device on the same network: http://<pi-ip>:5173
 ```
 
 **Stop:** `Ctrl+C` — dongle is released cleanly.
-
-**If dongle locks:** `pkill -f "edge/main.py"`
+**Unlock stuck dongle:** `pkill -f "edge/main.py"`
 
 ---
 
-### Pipeline Modes
+## Pipeline Modes
 
 | Flag | Behaviour |
 |------|-----------|
-| `--hardware` | Real RTL-SDR Blog V4 — sweeps 10 bands, full CNN inference |
-| `--demo` | Scripted scenario — CNN bypassed, good for presentations |
+| `--hardware` | RTL-SDR Blog V4 — real-time 10-band sweep with full CNN inference |
+| `--demo` | Scripted scenario — CNN bypassed, deterministic signal sequence |
 | `--sim` | Random RSSI drift — no hardware, no CNN |
-| `--display ws` | Stream BIE output to React dashboard via WebSocket (default) |
-| `--display terminal` | Print to console |
+| `--socket PATH` | Reads frames from a Unix socket (DSP partner integration) |
+| `--display ws` | Stream to React dashboard via WebSocket (default for Pi) |
+| `--display terminal` | Print BIE output to console |
+| `--display flask` | HTTP display backend |
 
 ---
 
@@ -173,34 +164,40 @@ cd webapp && npm run dev -- --host
 
 ```
 SpectrumEye/
+│
 ├── edge/
-│   ├── main.py                  # Pipeline orchestration (--hardware/--demo/--sim)
-│   ├── rtlsdr_source.py         # RTL-SDR Blog V4 frame source (pyrtlsdr)
-│   ├── classifier.py            # CNN inference wrapper
-│   ├── bie.py                   # Behavioral Inference Engine (8 states)
-│   ├── ws_server.py             # WebSocket broadcast → React dashboard
-│   ├── data_collector.py        # Training data collection tool
-│   ├── alert_controller.py      # Threat alerts (terminal / GPIO)
-│   ├── local_display.py         # Terminal / Flask display backend
-│   ├── sensor_fusion.py         # ESP32 MQTT subscriber
-│   └── aws_publisher.py         # AWS IoT Core stub
+│   ├── main.py              # Pipeline orchestration (all modes)
+│   ├── rtlsdr_source.py     # RTL-SDR Blog V4 frame source (pyrtlsdr)
+│   ├── classifier.py        # CNN inference wrapper (Keras + TFLite)
+│   ├── bie.py               # Behavioral Inference Engine (8 states)
+│   ├── ws_server.py         # WebSocket broadcast → React dashboard
+│   ├── alert_controller.py  # Threat alerts (terminal / GPIO)
+│   └── local_display.py     # Terminal / Flask display backend
 │
 ├── ml/
-│   ├── train.py                 # MobileNetV2 training
-│   ├── evaluate.py              # Model evaluation
+│   ├── train.py             # MobileNetV2 training (Google Colab / GPU)
+│   ├── evaluate.py          # Model evaluation & metrics
+│   ├── augment.py           # 7× data augmentation pipeline
+│   ├── split_dataset.py     # train/val/test stratification
+│   ├── convert_tflite.py    # INT8 TFLite conversion for Pi 5
+│   ├── generate_test_batch.py
 │   ├── notebooks/
 │   │   └── SpectrumEye_Training.ipynb
+│   ├── requirements.txt     # Training deps (TF 2.18, jupyter, sklearn)
 │   └── models/production/
-│       └── best_model.keras     # v3_colab — 97.45%, 10 classes (git-ignored)
+│       ├── best_model.keras   # v3_colab — 97.45%, 10 classes (git-ignored)
+│       └── best_model.tflite  # INT8 quantized — ~60–120 ms on Pi 5
 │
 ├── webapp/
 │   └── src/
-│       └── SpectrumEyeDashboard.jsx   # Phosphor radar + signal cards
+│       ├── SpectrumEyeDashboard.jsx  # Phosphor radar + signal cards
+│       ├── main.tsx
+│       └── index.css
 │
 ├── simulation/
-│   └── simulation_final.py      # Physics-based IQ → spectrogram generator
+│   └── simulation_final.py  # Original physics-based IQ generator (archive)
 │
-├── requirements.txt             # Edge deps (Python 3.12 dev / 3.13 Pi)
+├── requirements.txt         # Edge deps (Python 3.12 dev / 3.13 Pi)
 └── README.md
 ```
 
@@ -214,31 +211,163 @@ SpectrumEye/
 | Input | 224 × 224 × 1 (grayscale spectrogram) |
 | Output | 10 classes (softmax) |
 | Training data | Real IQ captures from RTL-SDR Blog V4 |
-| Accuracy | **97.45%** |
-| Model file | `ml/models/production/best_model.keras` |
+| Accuracy | **97.45%** on held-out test set |
+| Inference (Keras) | ~500 ms / frame on Pi 5 |
+| Inference (TFLite INT8) | ~60–120 ms / frame on Pi 5 |
+
+Generate the TFLite model from the Keras checkpoint (run on dev machine):
+
+```bash
+python ml/convert_tflite.py
+# Output: ml/models/production/best_model.tflite
+# Copy to Pi 5 — classifier.py auto-detects it
+```
+
+---
+
+## Training the CNN — Full Pipeline
+
+The model is trained on real RF spectrograms captured with the RTL-SDR dongle. Training runs on **Google Colab** (free T4 GPU). The pipeline is manual and follows these steps:
+
+```
+1. Collect real RF data (Pi 5 + RTL-SDR)  ──┐
+                                             ├──► ml/dataset/raw/<class>/
+2. Generate synthetic data (dev machine)  ──┘
+
+3. Package for Colab
+   ml/prepare_colab_zip.py  →  ml_training_v3.zip
+
+4. Upload to Google Colab & train
+   ml/notebooks/SpectrumEye_Training.ipynb
+   augment.py        5 000 raw  →  35 000 augmented
+   split_dataset.py             →  train / val / test
+   train.py          50 epochs, early stopping, T4 GPU
+   → download best_model.keras
+
+5. Convert to TFLite (dev machine)
+   ml/convert_tflite.py  →  best_model.tflite
+
+6. Deploy to Pi 5
+   scp best_model.keras best_model.tflite  pi5:~/SpectrumEye/ml/models/production/
+```
+
+### Step 1a — Collect Real RF Data (recommended)
+
+Run on the **Raspberry Pi 5** with the RTL-SDR dongle connected. Point the antenna at the sky / outdoors for best signal variety.
+
+```bash
+source .venv/bin/activate
+
+# Interactive mode — prompts for class and format
+python edge/data_collector.py
+
+# Non-interactive (recommended for scripting)
+python edge/data_collector.py \
+    --category walkie_talkie \
+    --n-images 500 \
+    --format grayscale \
+    --output-dir ml/dataset/raw
+
+# Repeat for all 10 classes:
+for CLASS in radio_fm air_traffic noaa local_repeaters maritime \
+             short_range_devices wireless_controllers walkie_talkie \
+             cellular_network aircraft_tracking; do
+    python edge/data_collector.py \
+        --category $CLASS \
+        --n-images 500 \
+        --format grayscale \
+        --output-dir ml/dataset/raw
+done
+```
+
+Images are saved as `ml/dataset/raw/<class>/sample_NNN.png` (224×224 grayscale PNG). Aim for **at least 200 images per class**; 500 is recommended. The script appends to existing captures so you can run it in multiple sessions.
+
+### Step 1b — Generate Synthetic Data (optional / bootstrap)
+
+If hardware is not available, generate physics-based synthetic spectrograms for 5 signal classes (Key_Signal, Walkie_Talkie, LTE, ADS_B, DJI_Drone):
+
+```bash
+# Run on any machine (no hardware needed)
+python ml/collect_synthetic.py --n 500
+# → ml/dataset/raw/<class>/ (5 classes × 500 images)
+```
+
+Synthetic data is useful to bootstrap training before real captures are available, but the model's accuracy on real hardware will be lower than with a fully real dataset.
+
+### Step 2 — Package for Google Colab
+
+Run on the **dev machine** from the project root. This bundles the raw dataset, augmentation scripts, and training script into a single zip ready to upload to Colab.
+
+```bash
+python ml/prepare_colab_zip.py
+# → ml_training_v3.zip  (~50–200 MB depending on dataset size)
+```
+
+The zip contains:
+```
+ml/
+├── dataset/raw/<class>/*.png   (all collected spectrograms)
+├── augment.py
+├── split_dataset.py
+└── train.py
+```
+
+### Step 3 — Train on Google Colab
+
+1. Open `ml/notebooks/SpectrumEye_Training.ipynb` in Google Colab
+2. Select **Runtime → Change runtime type → T4 GPU**
+3. Run Cell 1 (install deps) and Cell 2 (mount Drive or upload)
+4. Upload `ml_training_v3.zip` when prompted (Cell 3)
+5. Run all remaining cells — the notebook will:
+   - Unzip and validate the dataset
+   - Run `augment.py` (7× augmentation → ~35,000 images)
+   - Run `split_dataset.py` (70% train / 15% val / 15% test)
+   - Run `train.py` (MobileNetV2, 50 epochs, early stopping)
+   - Print accuracy metrics and save `best_model.keras`
+6. Download `best_model.keras` from the Colab file browser
+
+Expected training time: **~15–30 minutes** on a T4 GPU.
+
+### Step 4 — Convert to TFLite and Deploy
+
+```bash
+# On dev machine — convert Keras model to INT8 TFLite
+cp ~/Downloads/best_model.keras ml/models/production/best_model.keras
+python ml/convert_tflite.py
+# → ml/models/production/best_model.tflite
+
+# Copy both to Pi 5
+scp ml/models/production/best_model.keras \
+    ml/models/production/best_model.tflite \
+    porphyras@192.168.0.156:~/Desktop/SpectrumEye/ml/models/production/
+```
+
+`edge/classifier.py` auto-detects the `.tflite` file and uses it instead of the `.keras` model — no code changes needed.
 
 ---
 
 ## Behavioral Inference Engine
 
-`edge/bie.py` translates CNN output streams into behavioral assessments.
+`edge/bie.py` converts raw CNN + RSSI streams into behavioral assessments using EMA-smoothed RSSI and linear regression over a 20-sample sliding window.
 
-| State | Meaning |
+| State | Trigger |
 |-------|---------|
-| `APPEARED` | Signal just became visible |
-| `APPROACHING_SLOW` | RSSI rising slowly |
-| `APPROACHING_FAST` | RSSI rising fast — elevated priority |
-| `STATIONARY` | RSSI stable |
-| `DEPARTING_SLOW` | RSSI falling slowly |
-| `DEPARTING_FAST` | RSSI falling fast |
-| `ERRATIC` | RSSI fluctuating unpredictably |
-| `DISAPPEARED` | Signal lost |
+| `APPEARED` | First detection (< 5 samples) |
+| `APPROACHING_SLOW` | RSSI slope > +0.5 dBFS/s |
+| `APPROACHING_FAST` | RSSI slope > +2.0 dBFS/s |
+| `STATIONARY` | \|slope\| ≤ 0.5 dBFS/s |
+| `DEPARTING_SLOW` | RSSI slope < −0.5 dBFS/s |
+| `DEPARTING_FAST` | RSSI slope < −2.0 dBFS/s |
+| `ERRATIC` | High variance in consecutive RSSI differences |
+| `DISAPPEARED` | No update for 10 seconds |
+
+Threat levels: **CLEAR → MODERATE → ELEVATED → CRITICAL**, scored per signal class and behavioral state. Walkie-talkie and RC controllers score highest; FM/cellular score zero.
 
 ---
 
 ## WebSocket Protocol
 
-`ws://localhost:8765` — JSON messages from BIE:
+`ws://localhost:8765` — JSON pushed after each sweep frame:
 
 ```json
 {
@@ -260,19 +389,7 @@ SpectrumEye/
 }
 ```
 
-Dashboard auto-reconnects every 3 seconds and falls back to JS simulation when offline.
-
----
-
-## Roadmap
-
-| Phase | Description | Status |
-|-------|-------------|--------|
-| 1–5 | Dataset, CNN, BIE, dashboard, WebSocket pipeline | ✅ Complete |
-| 6 | Pi 5 + RTL-SDR Blog V4 real-time integration | ✅ Complete |
-| 7 | TFLite INT8 conversion (<50ms inference on Pi 5) | 🔲 Next |
-| 8 | AWS CDK cloud pipeline | 🔲 Stub ready |
-| 9 | Expand signal classes (DJI OcuSync, FPV, WiFi) | 🔲 Planned |
+The dashboard auto-reconnects every 3 seconds and falls back to a scripted JS simulation when the pipeline is offline.
 
 ---
 
@@ -283,8 +400,6 @@ Dashboard auto-reconnects every 3 seconds and falls back to JS simulation when o
 **Dashboard** — React 19 · Vite 7 · Tailwind CSS v4 · Canvas API
 
 **Hardware** — Raspberry Pi 5 (8 GB) · RTL-SDR Blog V4 (R828D, 500 kHz – 1.75 GHz)
-
-**Cloud (planned)** — AWS IoT Core · Kinesis · Lambda · DynamoDB
 
 ---
 

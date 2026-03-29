@@ -1,49 +1,25 @@
 """
-edge/main.py — SpectrumEye Edge Main Loop
+edge/main.py — SpectrumEye Edge Pipeline
 
 Orchestrates the full edge pipeline on Raspberry Pi 5:
 
-    sweep_frame → CNN Classifier → BIE → Local Display
-                                       → AWS Publisher
-                                       → Alert Controller
+    sweep_frame → CNN Classifier → BIE → AlertController → LocalDisplay / WebSocket
 
 Modes:
-  --sim     Simulation mode: generates synthetic sweep_frames internally.
-            No hardware or DSP partner code needed. Good for development.
+  --sim       Simulation mode: synthetic sweep_frames, no hardware needed.
+  --demo      Demo mode: scripted 3-signal scenario (good for presentations).
+  --hardware  Real hardware: RTL-SDR Blog V4 sweeps 10 RF bands live.
+  --socket    Socket mode: reads frames from a Unix socket written by DSP partner code.
 
-  --demo    Demo mode: runs a scripted 3-signal scenario (Key_Signal
-            approaches, Walkie_Talkie appears and is CRITICAL, LTE stays).
-            Pauses between phases so you can observe the dashboard.
-
-  --hardware  Real hardware mode: RTL-SDR Blog V4 sweeps 10 bands live.
-              No partner code needed — uses edge/rtlsdr_source.py directly.
-
-  --socket  Socket mode: reads sweep_frames from a Unix domain socket
-            written by partner DSP code. Default socket path:
-            /tmp/spectromeye_frames.sock
-
-  --display flask  Use Flask HTTP display instead of terminal.
-  --display ws     Push BIE output to the React dashboard via WebSocket.
-  --port    5000   Flask port (default 5000).
-  --ws-port 8765   WebSocket port (default 8765, only used with --display ws).
-
-Data flow per frame:
-  1. Receive sweep_frame dict (Interface A + A+)
-  2. Run CNN inference → Interface B classification dict
-  3. Run BIE → Interface C BIE output dict
-  4. Attach env_context from SensorFusion
-  5. Send to LocalDisplay, AWSPublisher, AlertController
+Display:
+  --display terminal  Print BIE output to console (default)
+  --display flask     HTTP display backend
+  --display ws        Push BIE output to React dashboard via WebSocket (ws://localhost:8765)
 
 Usage:
-  # Development / no hardware:
   python edge/main.py --sim
-  python edge/main.py --demo
-
-  # Real RTL-SDR hardware (no partner code needed):
+  python edge/main.py --demo --display ws
   python edge/main.py --hardware --display ws
-
-  # Legacy socket mode (DSP partner writes frames to socket):
-  python edge/main.py --socket /tmp/spectromeye_frames.sock
 """
 
 import sys
@@ -65,8 +41,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from edge.classifier       import SpectrumClassifier
 from edge.bie              import BIE
 from edge.rtlsdr_source    import RTLSDRFrameSource
-from edge.sensor_fusion    import SensorFusion
-from edge.aws_publisher    import AWSPublisher
 from edge.alert_controller import AlertController
 from edge.local_display    import LocalDisplay
 from edge.ws_server        import WsBroadcastServer
@@ -371,29 +345,26 @@ class EdgePipeline:
         model_path:      Optional[Path] = None,
         display_backend: str = "terminal",
         flask_port:      int = 5000,
-        enable_aws:      bool = False,
         ws_port:         int = 8765,
     ) -> None:
         self._source = frame_source
 
         log.info("EdgePipeline: loading CNN classifier...")
-        self._clf     = SpectrumClassifier(model_path=model_path) if model_path else SpectrumClassifier()
-        self._bie     = BIE(sensor_id=SENSOR_ID)
-        self._sensors = SensorFusion()
-        self._alerts  = AlertController(sensor_id=SENSOR_ID)
-        self._aws     = AWSPublisher(sensor_id=SENSOR_ID)
+        self._clf    = SpectrumClassifier(model_path=model_path) if model_path else SpectrumClassifier()
+        self._bie    = BIE(sensor_id=SENSOR_ID)
+        self._alerts = AlertController(sensor_id=SENSOR_ID)
 
         # WebSocket broadcast server (started only with --display ws)
         self._ws: Optional[WsBroadcastServer] = None
         if display_backend == "ws":
-            self._ws = WsBroadcastServer(host="localhost", port=ws_port)
+            self._ws      = WsBroadcastServer(host="localhost", port=ws_port)
             self._display = LocalDisplay(backend="terminal")  # keep terminal log too
         else:
             self._display = LocalDisplay(backend=display_backend, flask_port=flask_port)
 
-        self._running      = False
-        self._frame_count  = 0
-        self._start_time   = 0.0
+        self._running     = False
+        self._frame_count = 0
+        self._start_time  = 0.0
 
     def run(self) -> None:
         """Start the pipeline and block until interrupted."""
@@ -469,51 +440,35 @@ class EdgePipeline:
             frame_id=frame_id,
         )
 
-        # ── Step 3: Attach env context ────────────────────────────
-        bie_output["env_context"] = self._sensors.get_env_context()
-
-        # ── Step 4: Output ────────────────────────────────────────
+        # ── Step 3: Output ────────────────────────────────────────
         self._display.update(bie_output)
         self._alerts.evaluate(bie_output)
-        self._aws.publish_detection(bie_output)
         if self._ws:
             self._ws.send(bie_output)
 
-        # RSSI time-series data point
-        self._aws.publish_rssi(
-            signal_class=bie_output["signal_class"],
-            rssi_dbfs=rssi_dbfs,
-            confidence=classification["confidence"],
-            threat_score=bie_output["threat_score"],
-            timestamp_ms=timestamp_ms,
-        )
-
         # Periodic status heartbeat
         if self._frame_count % HEARTBEAT_EVERY == 0:
-            self._publish_status()
+            self._log_status()
 
-    def _publish_status(self) -> None:
-        import psutil  # optional — skip if not installed
+    def _log_status(self) -> None:
         uptime = int(time.monotonic() - self._start_time)
-
-        status: dict = {
-            "sensor_id":          SENSOR_ID,
-            "timestamp_ms":       int(time.time() * 1000),
-            "status":             "online",
-            "uptime_sec":         uptime,
-            "frames_processed":   self._frame_count,
-            "cnn_model_version":  self._clf.model_version,
-            "signals_tracked":    len(self._bie.get_all_states()),
-        }
-
+        fps    = self._frame_count / max(uptime, 1)
+        log.info(
+            "Status: %d frames | %.2f fps | signals tracked: %d | model: %s",
+            self._frame_count, fps,
+            len(self._bie.get_all_states()),
+            self._clf.model_version,
+        )
         try:
-            status["cpu_temp_c"]    = psutil.sensors_temperatures()["cpu_thermal"][0].current
-            status["cpu_usage_pct"] = psutil.cpu_percent()
-            status["ram_usage_pct"] = psutil.virtual_memory().percent
+            import psutil
+            log.info(
+                "  CPU: %.0f%%  RAM: %.0f%%  temp: %.1f°C",
+                psutil.cpu_percent(),
+                psutil.virtual_memory().percent,
+                psutil.sensors_temperatures()["cpu_thermal"][0].current,
+            )
         except Exception:
-            pass   # psutil not available or no CPU temp sensor
-
-        self._aws.publish_status(status)
+            pass  # psutil not available or no temp sensor
 
     def _handle_shutdown(self, signum, frame) -> None:
         log.info("EdgePipeline: shutdown signal received")
@@ -526,9 +481,7 @@ class EdgePipeline:
         self._display.stop()
         if self._ws:
             self._ws.stop()
-        self._sensors.close()
         self._alerts.close()
-        self._aws.close()
         uptime = int(time.monotonic() - self._start_time)
         log.info(
             "EdgePipeline: stopped after %d frames in %d seconds",
@@ -629,11 +582,11 @@ def main() -> None:
 
     # Build and run pipeline
     pipeline = EdgePipeline(
-        frame_source=source,
-        model_path=model_path,
-        display_backend=args.display,
-        flask_port=args.port,
-        ws_port=args.ws_port,
+        frame_source    = source,
+        model_path      = model_path,
+        display_backend = args.display,
+        flask_port      = args.port,
+        ws_port         = args.ws_port,
     )
     pipeline.run()
 
