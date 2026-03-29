@@ -241,8 +241,20 @@ const ADSB_RSSI_BY_PHASE = {
 const RADAR_SIZE = 480;
 
 function rssiToDist(rssi, R) {
+  // Display range: -30 (strong/close) → 12% R,  -100 (weak/far) → 90% R
   const t = Math.max(0, Math.min(1, (-rssi - 30) / 70));
   return (0.12 + t * 0.78) * R;
+}
+
+// ─── LIVE RSSI NORMALIZATION ──────────────────────────────────────
+// RTL-SDR Blog V4 _compute_rssi returns dBFS values (IQ power).
+// Typical range: -5 dBFS (strong FM/cellular) to -55 dBFS (noise floor).
+// Map to the display "dBm" range the radar and sim both use: -30 to -90.
+// Strong live signal (-5 dBFS)  → -30 display (inner ring, "close")
+// Weak live signal  (-55 dBFS)  → -90 display (outer ring, "far")
+function normalizeLiveRssi(rssiDbfs) {
+  const t = Math.max(0, Math.min(1, (rssiDbfs - (-5)) / ((-55) - (-5))));
+  return Math.round(-30 + t * -60);
 }
 
 function RadarCanvas({ signalsRef }) {
@@ -398,9 +410,10 @@ function RadarCanvas({ signalsRef }) {
 
       // Label when bright
       if (bright > 0.2) {
+        const rssiLabel = sig.rssiRaw != null ? `${sig.rssiRaw}dBFS` : `${sig.rssi}dBm`;
         ctx.font = "bold 18px 'JetBrains Mono', monospace";
         ctx.fillStyle = `rgba(${baseColor},${0.5 + bright * 0.5})`;
-        ctx.fillText(`${def.shortLabel || sig.cls}  ${sig.rssi}dBm`, bx + 12, by - 8);
+        ctx.fillText(`${def.shortLabel || sig.cls}  ${rssiLabel}`, bx + 12, by - 8);
       }
     }
 
@@ -463,8 +476,10 @@ function SignalCard({ signal }) {
   const isAlert = def.category === "ALERT";
   const sentence = getSentence(signal.cls, signal.state);
 
+  const isLive   = signal.rssiRaw != null;
   const trendSign = signal.trend >= 0 ? "↑ +" : "↓ ";
-  const trendStr  = `${trendSign}${Math.abs(signal.trend || 0).toFixed(0)} dBm / 10s`;
+  const trendUnit = isLive ? "dBFS / 10s" : "dBm / 10s";
+  const trendStr  = `${trendSign}${Math.abs(signal.trend || 0).toFixed(0)} ${trendUnit}`;
 
   const borderColor = isAlert ? C.red : def.color;
   const headerColor = isAlert ? C.red : def.color;
@@ -504,7 +519,9 @@ function SignalCard({ signal }) {
           <span style={{ color: C.textDim, width: 90, flexShrink: 0 }}>Strength</span>
           <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <StrengthBar rssi={signal.rssi} />
-            <span style={{ color: C.text }}>{signal.rssi} dBm</span>
+            <span style={{ color: C.text }}>
+              {isLive ? `${signal.rssiRaw} dBFS` : `${signal.rssi} dBm`}
+            </span>
           </span>
         </div>
         <Row label="Trend"     value={trendStr} color={signal.trend >= 0 ? C.red : C.clear} />
@@ -690,12 +707,15 @@ export default function SpectrumEyeDashboard() {
         let data;
         try { data = JSON.parse(evt.data); } catch { return; }
 
-        // Map ws payload → radar signal objects
+        // Map ws payload → radar signal objects.
+        // rssiRaw: actual RTL-SDR dBFS value (shown in card).
+        // rssi:    normalized to display range for radar positioning.
         const mapped = (data.signals || []).map(s => ({
           id:        s.id,
           cls:       s.cls,
           state:     s.state,
-          rssi:      s.rssi,
+          rssi:      normalizeLiveRssi(s.rssi),
+          rssiRaw:   s.rssi,
           conf:      s.conf,
           bearing:   s.bearing,
           trend:     s.trend,
