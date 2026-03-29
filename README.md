@@ -177,6 +177,9 @@ Active when the edge pipeline is **not running** or unreachable. The dashboard r
 
 This mode is useful to demonstrate the dashboard interface without any hardware. Open `http://localhost:5173` with no pipeline running and you will see it immediately.
 
+<img width="1894" height="682" alt="image" src="https://github.com/user-attachments/assets/57fe5061-fa49-434d-bf62-2c86bb0fb7b7" />
+
+
 ### ● LIVE · CNN (green badge)
 
 Active when the edge pipeline is running with `--display ws`. The dashboard connects to `ws://localhost:8765` and renders real data from the RTL-SDR dongle.
@@ -200,6 +203,9 @@ If the connection drops the dashboard automatically switches back to SIMULATION 
 | Badge color | Amber | Green |
 
 ---
+
+<img width="1917" height="679" alt="image" src="https://github.com/user-attachments/assets/a1ff2cf8-1098-4622-ba73-6ac5d5eaa6c5" />
+
 
 ## Project Structure
 
