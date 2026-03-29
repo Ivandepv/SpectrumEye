@@ -160,6 +160,47 @@ cd webapp && npm run dev -- --host
 
 ---
 
+## Dashboard Modes
+
+The React dashboard (`webapp/`) has two operating modes that switch automatically based on whether the WebSocket pipeline is connected.
+
+### ◌ SIMULATION (amber badge)
+
+Active when the edge pipeline is **not running** or unreachable. The dashboard runs a fully self-contained JavaScript simulation with no hardware or Python required.
+
+- Scripted signal scenario loops continuously: a key fob appears, approaches fast, goes stationary, then departs — mimicking a real detection lifecycle
+- Background signals (FM broadcast, cellular) are always present with slow RSSI drift
+- Periodic ADS-B aircraft flyovers and RC/drone controller appearances
+- Signal positions on the radar are driven by simulated RSSI values (stronger = closer to center, weaker = outer rings)
+- Bearings drift slowly to simulate movement
+- Threat level, signal cards, and alert log all update in real time
+
+This mode is useful to demonstrate the dashboard interface without any hardware. Open `http://localhost:5173` with no pipeline running and you will see it immediately.
+
+### ● LIVE · CNN (green badge)
+
+Active when the edge pipeline is running with `--display ws`. The dashboard connects to `ws://localhost:8765` and renders real data from the RTL-SDR dongle.
+
+- Every signal card shows a real CNN classification (class + confidence %) from the MobileNetV2 model
+- RSSI values are real measurements from the dongle (reported in **dBFS** — dB relative to full scale)
+- Radar dot positions are derived from RSSI: the raw dBFS range (strong ≈ −5, weak ≈ −55) is normalized to the radar's display range so signals spread naturally across the rings
+- Behavioral state (APPROACHING\_FAST, STATIONARY, etc.) and trend arrows come from the BIE's real RSSI slope computation
+- Threat level is calculated by the BIE based on signal class and behavioral state
+- The alert log shows real pipeline events (connections, threat transitions)
+
+If the connection drops the dashboard automatically switches back to SIMULATION and retries every 3 seconds. When the pipeline reconnects the badge turns green and live data resumes immediately.
+
+| | SIMULATION | LIVE · CNN |
+|-|-----------|------------|
+| Hardware needed | No | RTL-SDR + Pi 5 |
+| CNN running | No (scripted) | Yes (MobileNetV2) |
+| RSSI source | Simulated (dBm) | Real dongle (dBFS) |
+| Bearing | Simulated drift | Simulated drift |
+| Threat scoring | JS-derived | BIE (Python) |
+| Badge color | Amber | Green |
+
+---
+
 ## Project Structure
 
 ```
