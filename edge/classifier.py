@@ -48,6 +48,9 @@ CLASS_LABELS = [
 # Path to production model (relative to this file)
 _DEFAULT_MODEL = Path(__file__).parent.parent / "ml" / "models" / "production" / "best_model.keras"
 
+# If a .tflite file exists alongside the .keras file it is used automatically.
+# Generate it with:  python ml/convert_tflite.py  (run on dev machine)
+
 # Confidence thresholds (Interface Contract §Interface B)
 CONF_HIGH   = 0.85   # ≥ 0.85 → HIGH, full confidence
 CONF_MEDIUM = 0.60   # 0.60 – 0.84 → MEDIUM, flagged
@@ -65,42 +68,68 @@ class SpectrumClassifier:
 
     def __init__(self, model_path: Path = _DEFAULT_MODEL) -> None:
         """
-        Load the Keras model from disk and warm it up.
+        Load the model from disk and warm it up.
+
+        Prefers a .tflite file alongside the .keras file (4–8x faster on Pi 5).
+        Falls back to full Keras model if no .tflite is found.
 
         Args:
-            model_path: path to best_model.keras or spectromeye_best.keras
+            model_path: path to best_model.keras
         """
-        self._model_path = Path(model_path)
-        self._model      = None
-        self._version    = self._model_path.stem   # e.g. "spectromeye_best"
-        self._loaded     = False
+        self._model_path   = Path(model_path)
+        self._tflite_path  = self._model_path.with_suffix(".tflite")
+        self._model        = None   # Keras model (if used)
+        self._interpreter  = None   # TFLite interpreter (if used)
+        self._use_tflite   = False
+        self._version      = self._model_path.stem
+        self._loaded       = False
 
         self._load()
 
     # ── Model loading ─────────────────────────────────────────────
 
     def _load(self) -> None:
-        """Import TensorFlow lazily (heavy import) and load the model."""
-        if not self._model_path.exists():
-            raise FileNotFoundError(
-                f"Model not found: {self._model_path}\n"
-                f"Train the model first with:  python ml/train.py\n"
-                f"Or run quick test with:       python ml/train.py --quick"
-            )
-
-        # Suppress TF startup noise
+        """Import TensorFlow lazily and load the model (TFLite preferred)."""
         import os
         os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
 
-        from tensorflow import keras
-        print(f"[Classifier] Loading model: {self._model_path}")
-        self._model = keras.models.load_model(str(self._model_path))
-        print(f"[Classifier] Model loaded — {self._model.count_params():,} params")
-
-        # Warm-up inference (first call triggers JIT compilation)
         dummy = np.zeros((1, 224, 224, 1), dtype=np.float32)
-        self._model.predict(dummy, verbose=0)
-        print("[Classifier] Warm-up complete — ready")
+
+        if self._tflite_path.exists():
+            # ── TFLite path (fast, recommended for Pi 5) ──────────
+            import tensorflow as tf
+            print(f"[Classifier] Loading TFLite model: {self._tflite_path}")
+            self._interpreter = tf.lite.Interpreter(model_path=str(self._tflite_path))
+            self._interpreter.allocate_tensors()
+            self._use_tflite  = True
+            self._version     = self._tflite_path.stem + "_tflite"
+
+            # Warm-up
+            inp = self._interpreter.get_input_details()
+            out = self._interpreter.get_output_details()
+            self._interpreter.set_tensor(inp[0]["index"], dummy)
+            self._interpreter.invoke()
+            print("[Classifier] TFLite warm-up complete — ready")
+
+        elif self._model_path.exists():
+            # ── Keras fallback ─────────────────────────────────────
+            from tensorflow import keras
+            print(f"[Classifier] Loading Keras model: {self._model_path}")
+            self._model = keras.models.load_model(str(self._model_path))
+            print(f"[Classifier] Model loaded — {self._model.count_params():,} params")
+
+            self._model.predict(dummy, verbose=0)
+            print("[Classifier] Keras warm-up complete — ready")
+
+        else:
+            raise FileNotFoundError(
+                f"No model found at:\n"
+                f"  {self._tflite_path}\n"
+                f"  {self._model_path}\n"
+                f"Generate TFLite: python ml/convert_tflite.py\n"
+                f"Or train Keras:  python ml/train.py"
+            )
+
         self._loaded = True
 
     # ── Inference ─────────────────────────────────────────────────
@@ -147,8 +176,15 @@ class SpectrumClassifier:
         x = spectrogram.astype(np.float32)[np.newaxis, :, :, np.newaxis]
 
         # Run inference
-        t0    = time.perf_counter()
-        probs = self._model.predict(x, verbose=0)[0]   # shape (10,)
+        t0 = time.perf_counter()
+        if self._use_tflite:
+            inp = self._interpreter.get_input_details()
+            out = self._interpreter.get_output_details()
+            self._interpreter.set_tensor(inp[0]["index"], x)
+            self._interpreter.invoke()
+            probs = self._interpreter.get_tensor(out[0]["index"])[0]  # shape (10,)
+        else:
+            probs = self._model.predict(x, verbose=0)[0]              # shape (10,)
         inference_ms = (time.perf_counter() - t0) * 1000.0
 
         # Decode predictions
