@@ -452,4 +452,4 @@ The dashboard auto-reconnects every 3 seconds and falls back to a scripted JS si
 
 ## Authors
 
-Jorge Coronado · Memo · Alan
+Alan Romo · Guillermo Portillo · Jorge Coronado
